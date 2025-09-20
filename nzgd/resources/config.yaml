@@ -1,0 +1,96 @@
+output_directory: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data"
+
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/extracted_nzgd_v4.db"
+
+
+investigation_types:
+  - CPT
+  - SCPT
+
+nzgd_source_data_dir: "/home/arr65/data/nzgd/downloads_and_metadata/nzgd_investigation_source_files_from_webcrawler_11_Sep_2025"
+
+cpt_column_name_descriptions:
+  Depth: "depth in m"
+  qc: "cone resistance (qc) in MPa"
+  fs: "sleeve friction (fs) in MPa"
+  u: "pore pressure (u2) in MPa"
+  swv: "s-wave velocity in m/s"
+  pwv: "p-wave velocity in m/s"
+
+file_extensions:
+  # These checks will be case-insensitive.
+  spreadsheets: [".xlsx", ".xls", ".csv", ".txt"] 
+  ags : [".ags"]
+  nondata : [".pdf",".cpt"]
+
+search_patterns:
+  depth:
+    characters: ["m", "w", "h", "r", "cf"]
+    substrings: ["depth", "length", "top", "h "]
+  qc:
+    characters: ["q", "mpa"]
+    substrings: ["qc", "q_c", "cone", "resistance", "res", "tip"]
+  fs:
+    characters: ["mpa"]
+    substrings: ["fs", "sleeve", "friction", "local"]
+  u:
+    characters: ["u", "mpa"]
+    substrings: ["u2", "u ", "pore", "water", "dynamic"]
+
+
+avoid_columns_containing_if_possible:
+  - "clean"
+
+min_num_data_points_per_column: 3
+
+
+min_numerical_surplus_per_column: 2
+
+
+min_numerical_surplus_per_row: 3
+
+encodings_to_try: ["utf-8", "latin1", "iso-8859-1", "cp1252"]
+
+known_missing_value_placeholders:
+  - 9999
+  - -8.888
+  - -9.999
+  - -7.7777
+  - -7.777
+  - -777
+  - -1944.2234
+  - -2592.1785
+  - -3888.4823
+  - -4999.4882
+  - -5832.7411
+  - -5184.5892
+  - -7777
+  - -7776.9999
+  - -7776.995
+  - -8888
+  - -9999
+  - -9999.0027
+  - -7.752
+
+
+known_false_positive_column_names:
+  "Su ratio": "u (pore pressure (u2) in MPa" # identified from CPT_158096
+  "Equilibirum pore pressure (u0) in MPa": "u (pore pressure (u2) in MPa" # identified from CPT_95223
+
+
+known_special_cases:
+  CPT_59414: "corrupt_file - all data in first column"
+  CPT_73271: "corrupt_file - data columns are not recognized"
+
+infer_wrong_units_thresholds:
+  typical_depth_step_size_m: 1e-2 # Depth step sizes are typically around 1cm.
+  smaller_depth_step_size_implies_not_in_m: 1e-3 # Depth step sizes are typically around 1cm, so if it's much smaller than this, the depth values are likely not in m.
+  cm_threshold: 99 # Depth values consistently exceeding this threshold indicate that the depth is in cm.
+  mm_threshold: 999 # Depth values consistently exceeding this threshold indicate that the depth is in mm.
+  qc_kpa_threshold: 100 # qc values consistently exceeding this threshold indicates that qc is in kPa.
+  fs_kpa_threshold: 10 # fs values consistently exceeding this threshold indicates that fs is in kPa.
+  u_kpa_threshold: 5 # u values consistently exceeding this threshold indicates that u is in kPa.
+  percent_exceeding_threshold: 75.0 # If greater than this percentage of data points exceed a parameter's threshold value, the parameter will be converted to its corresponding unit.
+
+path_to_cpt_files: "/home/arr65/data/nzgd/downloads_and_metadata/unorganised_raw_from_nzgd/cpt"
+path_to_scpt_files: "/home/arr65/data/nzgd/downloads_and_metadata/unorganised_raw_from_nzgd/scpt"
