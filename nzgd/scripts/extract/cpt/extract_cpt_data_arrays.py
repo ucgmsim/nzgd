@@ -6,8 +6,10 @@ for data extraction, then writes each batch to the database sequentially.
 """
 
 import multiprocessing as mp
+import os
 
 import natsort
+import pandas as pd
 from tqdm import tqdm
 
 from nzgd import constants
@@ -23,26 +25,14 @@ if __name__ == "__main__":
             natsort.natsorted(list(nzgd_source_data_dir.glob("*"))),
         )
 
-    # id_to_do = "_24449"
-    # records_to_extract2 = []
-    # for x in records_to_extract:
-    #     path_as_str = str(x)
-
-    #     if id_to_do in path_as_str:
-    #         records_to_extract2.append(x)
-
-    # records_to_extract = records_to_extract2
-
-    # db_path = constants.OUTPUT_DIRECTORY / "nzgd_cpt_and_scpt_data.db"
-
-    # if Path(db_path).exists():
-    #     db_path.unlink()
-
     # A small number of records have been removed from the NZGD after their
     # source files were downloaded.  These records were likely removed for a reason
     # such data quality or permission issues, so they are removed from the
     # list to extract.
-    records_currently_in_nzgd = set(constants.NZGD_INDEX_DF["ID"].values)
+
+    records_currently_in_nzgd = set(
+        pd.read_csv(str(constants.INDEX_FILE_PATH))["nzgd_id"].values
+    )
     records_that_have_been_removed = set(records_to_extract) - records_currently_in_nzgd
 
     if len(records_that_have_been_removed) > 0:
@@ -52,10 +42,7 @@ if __name__ == "__main__":
             if record_dir.name not in records_that_have_been_removed
         ]
 
-    # records_to_extract = records_to_extract[0:1]
-    # print()
-
-    NUM_WORKERS = 6
+    NUM_WORKERS = os.cpu_count()
     results = []
 
     with mp.Pool(processes=NUM_WORKERS) as pool:

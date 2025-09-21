@@ -13,7 +13,8 @@ import pandas as pd
 from natsort import natsorted
 from tqdm import tqdm
 
-from nzgd_data_extraction import constants, data_structures, errors, info, search, tasks
+from nzgd import constants
+from nzgd.extract.cpt import data_structures, errors, info, search, tasks
 
 
 def get_csv_txt_iterable(
@@ -635,23 +636,7 @@ if __name__ == "__main__":
     )
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    # cpt_list = cpt_list[0:1000]
-    # cpt_list = cpt_list[0:10]
-
     nzgd_id_list = natsorted([int(cpt_id.name.split("_")[1]) for cpt_id in cpt_list])
-
-    # nzgd_id_list = [173919]
-    # nzgd_id_list = [45960]
-
-    # nzgd_id_list = pd.read_csv(
-    #     "/home/arr65/data/nzgd/extracted_single_values_V3/missing_from_v4.csv",
-    # )["nzgd_id"].tolist()
-
-    # nzgd_id_list = nzgd_id_list[0:200]
-
-    # nzgd_id_list = [45565]
-
-    # nzgd_id_list = [197135]
 
     results_with_none = []
     num_workers = 7

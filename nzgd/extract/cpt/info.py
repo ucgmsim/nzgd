@@ -6,7 +6,8 @@ import numpy.typing as npt
 import pandas as pd
 import toml
 
-from nzgd_data_extraction import constants, data_structures, search
+from nzgd import constants
+from nzgd.extract.cpt import data_structures, search
 
 
 def count_num_str_float(

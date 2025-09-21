@@ -1,7 +1,7 @@
 """Functions to validate extracted CPT data."""
 
-from nzgd_data_extraction import (
-    constants,
+from nzgd import constants
+from nzgd.extract.cpt import (
     data_structures,
     info,
     tasks,

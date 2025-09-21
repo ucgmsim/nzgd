@@ -67,7 +67,10 @@ if __name__ == "__main__":
     )
 
     metadata_df = pd.read_csv(
-        constants.RESOURCE_PATH / "nzgd_metadata_from_coordinates_22_august_2025.csv",
+        str(
+            constants.RESOURCE_PATH
+            / "nzgd_metadata_from_coordinates_22_august_2025.csv",
+        )
     )
 
     # Filter metadata to keep only rows where nzgd_id is in the database

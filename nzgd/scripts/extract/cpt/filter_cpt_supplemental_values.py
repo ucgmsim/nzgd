@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from nzgd_data_extraction import constants
+from nzgd import constants
 
 
 @dataclass

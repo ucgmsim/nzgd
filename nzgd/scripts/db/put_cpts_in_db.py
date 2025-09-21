@@ -172,6 +172,7 @@ def serialize_cpt_data_arrays(
     extracted_cpt_files = natsort.natsorted(list(extracted_cpt_dir.glob("*.parquet")))
     nzgd_ids_with_extractions = {int(cpt_file.stem) for cpt_file in extracted_cpt_files}
 
+    # Set the initial measurement_id to 1
     cpt_measurements_id = 1
 
     for _, cpt_id_df_row in tqdm(cpt_id_df.iterrows(), total=len(cpt_id_df)):
@@ -231,9 +232,6 @@ if __name__ == "__main__":
     extracted_cpt_dir = Path(
         "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/extracted_data_per_record",
     )
-
-    # cpt_id_and_single_values_df = cpt_id_and_single_values_df.iloc[124054 : 124054 + 1]
-    # cpt_id_and_single_values_df = cpt_id_and_single_values_df.iloc[0:10]
 
     output_path = Path(
         constants.OUTPUT_DB_PATH,

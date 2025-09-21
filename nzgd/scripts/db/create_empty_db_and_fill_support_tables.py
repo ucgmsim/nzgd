@@ -8,6 +8,7 @@ from tqdm import tqdm
 from nzgd import constants
 from nzgd.db import orm
 
+
 def serialize_record_metadata(metadata_df: pd.DataFrame, conn: sqlite3.Connection):
     cursor = conn.cursor()
 
@@ -326,7 +327,3 @@ if __name__ == "__main__":
         serialize_investigation_type_table(db)
 
         serialize_location_name_tables(metadata_from_location_coordinates, db)
-
-        ## Support tables end here
-
-        # serialize_record_metadata(meta_data_df, db)

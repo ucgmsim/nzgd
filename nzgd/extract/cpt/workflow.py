@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from nzgd_data_extraction import (
+from nzgd.extract.cpt import (
     conditioning,
     extraction,
     output,
@@ -32,6 +32,7 @@ def process_one_record(
     None
 
     """
+
     sheet_extractions = extraction.extract_all_data_for_one_record(
         record_dir=record_dir,
     )

@@ -2,7 +2,8 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from nzgd_data_extraction import constants, data_structures, errors, tasks
+from nzgd import constants
+from nzgd.extract.cpt import data_structures, errors, tasks
 
 
 def find_cell_with_exact_match_in_line(

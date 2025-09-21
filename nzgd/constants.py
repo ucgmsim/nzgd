@@ -5,15 +5,17 @@ import importlib.resources
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import yaml
 
 # Define the resource directory
 RESOURCE_PATH = importlib.resources.files("nzgd") / "resources"
 
+INDEX_FILE_PATH = RESOURCE_PATH / "nzgd_metadata_from_coordinates_22_august_2025.csv"
+
 # Load all configurations from the YAML file
 with (RESOURCE_PATH / "config.yaml").open() as f:
     CONFIG = yaml.safe_load(f)
+
 
 OUTPUT_DB_PATH = CONFIG["output_db_path"]
 
@@ -551,9 +553,6 @@ target_depth_keywords_dict = {
         "assuming_cell_is_a_field_name_in_need_of_a_value": search_reason__is_field_name__values_for_target_depth_reached,
     },
 }
-
-############################################################
-
 
 refused_keywords_dict = {
     "target": {

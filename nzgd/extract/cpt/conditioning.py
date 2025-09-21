@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from nzgd_data_extraction import data_structures, tasks
+from nzgd.extract.cpt import data_structures, tasks
 
 
 def data_conditioning_for_one_sheet(

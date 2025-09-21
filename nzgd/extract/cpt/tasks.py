@@ -9,8 +9,8 @@ import numpy.typing as npt
 import pandas as pd
 import xlrd
 
-from nzgd_data_extraction import (
-    constants,
+from nzgd import constants
+from nzgd.extract.cpt import (
     data_structures,
     errors,
     info,
@@ -147,10 +147,6 @@ def explicit_unit_conversions_in_sheet(
                 explicit_unit_conversions.append(
                     f"{col_name} was converted from kPa to MPa",
                 )
-
-    # converted_units_data_df.attrs["explicit_unit_conversions"] = " & ".join(
-    #     explicit_unit_conversions,
-    # )
 
     # Where placeholder_mask is True, replace with original values
     converted_units_data_df = converted_units_data_df.mask(
@@ -545,10 +541,6 @@ def infer_unit_conversions_for_sheet(
         inferred_unit_conversions.append(
             f"{list(constants.COLUMN_DESCRIPTIONS)[3]} was converted from kPa to MPa",
         )
-
-    # converted_units_data_df.attrs["inferred_unit_conversions"] = " & ".join(
-    #     inferred_unit_conversions,
-    # )
 
     # restore the original placeholder values (where placeholder_mask is True)
     converted_units_data_df = converted_units_data_df.mask(
@@ -961,12 +953,6 @@ def get_csv_or_txt_split_readlines(
     with open(file_path, encoding=encoding) as file:
         lines = file.readlines()
 
-    # Possibly don't need this check here
-    # if len(lines) == 1:
-    #     raise errors.FileProcessingError(
-    #         f"only_one_line - sheet (0) has only one line with first cell of {lines[0]}",
-    #     )
-
     ## If the delimiter is white space (r"\s+"), special handling is required for cases such as CPT_59209,
     ## which does not give a unit for Depth, so has an empty cell at the start of its second header row, as shown below:
     ## Depth    qc   fs    u2
@@ -1076,16 +1062,6 @@ def load_excel_sheet(
             sheet_name=sheet_name.replace("-", "_"),
         )
 
-    # data_type_count = info.count_num_str_float(
-    #     extracted_data_df,
-    # )
-
-    # # Drop columns that have more text than numeric data
-    # extracted_data_df = extracted_data_df.loc[
-    #     :,
-    #     data_type_count.numerical_surplus_per_col >= 0,
-    # ]
-
     try:
         multi_row_header_indices = search.find_row_indices_of_header_lines(
             extracted_data_df,
@@ -1152,28 +1128,6 @@ def load_excel_sheet(
             file_path=file_path,
             sheet_name=sheet_name.replace("-", "_"),
         )
-
-    # col_names = select_best_option_for_column_extraction(
-    #     possible_col_names_with_info,
-    #     extracted_data_df,
-    #     file_path.name,
-    #     sheet_name,
-    # )
-
-    # Make a copy that contains strings so that interruptions in the Depth column
-    # can be identified.     # after this point to exclude different kinds
-    # of data that is included at the bottom of some files
-    # extracted_data_df_still_containing_strings = extracted_data_df.copy()
-
-    #     ### Some records contain other data sets in the same file but in these cases, the Depth column is
-    #     ### interrupted by a string, so we find the first row that contains a string in the Depth column
-    #     ### and remove all rows after this point
-    #     if final_col_names[0] is not None:
-    #         extracted_data_df = data_structures.remove_nondata_rows_after_data(
-    #             extracted_data_df,
-    #             extracted_data_df_still_containing_strings,
-    #             final_col_names,
-    #         )
 
     return data_structures.SheetExtractionResult(
         extraction=data_structures.ExtractedDataAndColInfo(
