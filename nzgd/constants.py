@@ -146,8 +146,6 @@ SCPT_PATHS = list(
 CPT_IDS = set([int(cpt.stem.split("_")[1]) for cpt in CPT_PATHS])
 SCPT_IDS = set([int(scpt.stem.split("_")[1]) for scpt in SCPT_PATHS])
 
-
-################################################################
 # Key words for termination reason, ground water level, and tip net area ratio
 
 MAX_NUM_BLANK_SPACES_TO_TRY_SKIPPING = 4
@@ -279,8 +277,6 @@ search_reason__from_one_cell__values_refused = [
     "REASON FOR ENDING TEST:;;;GRAVELS",
 ]
 
-####################
-
 search_reason__is_field_name__values_for_target_depth_reached = (
     search_target__from_one_cell__target_depth_reached
 )
@@ -290,15 +286,11 @@ search_reason__is_field_name__values_for_refused = (
 )
 
 
-########################
-
 search_comment__from_one_cell__values_for_target_depth_reached = [
     *search_target__from_one_cell__target_depth_reached,
     "target",
 ]
 
-
-########################
 
 # Regex pattern to match decimal numbers including scientific notation
 # -? - optionally matches a minus sign (for negative numbers)
@@ -490,19 +482,6 @@ term_dict = {
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
     },
 }
-
-
-# term_dict = {
-#     "groundwater level": {
-#         "assuming_cell_is_standalone": search_gwl__incl_not_measured,
-#         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-#         "assuming_cell_is_a_field_name_in_need_of_a_value": search_gwl__incl_not_measured,
-#     },
-# }
-
-
-########################################################################
-######################################################################
 
 
 target_depth_keywords_dict = {
