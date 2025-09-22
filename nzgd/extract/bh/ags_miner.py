@@ -49,7 +49,6 @@ import multiprocessing
 import re
 import sqlite3
 import warnings
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -60,36 +59,13 @@ import tqdm
 import typer
 from python_ags4 import AGS4
 
+from nzgd.extract.bh.data_structures import SPTReport
+
 # Initialize Typer app
 app = typer.Typer()
 
 # Configure warnings
 warnings.simplefilter("error", np.exceptions.RankWarning)
-
-
-@dataclass
-class SPTReport:
-    borehole_id: int
-    """The borehole ID number for this report."""
-    nzgd_id: int
-    """The NZGD D number for this report."""
-    efficiency: float | None
-    """The hammer efficiency ratio."""
-
-    borehole_diameter: float | None
-    """The diameter of the borehole."""
-
-    extracted_gwl: float | None
-    """The extracted ground water level for the SPT (borehole) report."""
-
-    source_file: Path
-    """The path to the report."""
-
-    spt_measurements: pd.DataFrame
-    """The SPT record. A data frame with columns Depth, and N."""
-
-    soil_measurements: pd.DataFrame
-    """The SPT soil measurements. A dataframe with columns 'top_depth', and 'soil_types'"""
 
 
 def extract_soil_report(description: str) -> set[str]:
@@ -201,7 +177,6 @@ def process_borehole(report: Path) -> SPTReport:
         borehole_id=borehole_id(report),
         nzgd_id=borehole_id(report),
         efficiency=efficiency,
-        borehole_diameter=None,
         extracted_gwl=None,
         source_file=report,
         spt_measurements=spt_table,
@@ -243,7 +218,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             report.borehole_id,
             report.borehole_id,
             report.efficiency,
-            report.borehole_diameter,
             report.extracted_gwl,
             report.source_file.name,
         )
@@ -251,8 +225,8 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
     ]
     cursor.executemany(
         """
-        INSERT OR REPLACE INTO sptreport (borehole_id, nzgd_id, efficiency, borehole_diameter, extracted_gwl, source_file)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO sptreport (borehole_id, nzgd_id, efficiency, extracted_gwl, source_file)
+        VALUES (?, ?, ?, ?, ?)
     """,
         report_data,
     )

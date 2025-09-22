@@ -217,6 +217,7 @@ if __name__ == "__main__":
     cpt_id_and_single_values_df = pd.read_csv(
         "/home/arr65/src/nzgd_data_extraction/nzgd_data_extraction/nzgd_sqlite/cpt_ids_multi_single_values.csv",
     )
+    # cpt_id_and_single_values_df = cpt_id_and_single_values_df.iloc[0:10]
 
     model_gwl_df = pd.read_csv(
         "/home/arr65/src/nzgd_data_extraction/nzgd_data_extraction/resources/nzgd_metadata_from_coordinates_22_august_2025.csv",

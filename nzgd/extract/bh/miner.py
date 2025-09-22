@@ -51,7 +51,6 @@ import re
 import sqlite3
 import warnings
 from collections.abc import Generator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -67,74 +66,13 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage, PDFTextExtractionNotAllowed
 from pdfminer.pdfparser import PDFParser
 
+from nzgd.extract.bh.data_structures import SPTReport, TextObject
+
 # Initialize Typer app
 app = typer.Typer()
 
 # Configure warnings
 warnings.simplefilter("error", np.exceptions.RankWarning)
-
-
-@dataclass
-class TextObject:
-    """Represents a text object with positional and textual data.
-
-    Attributes
-    ----------
-    y0 : float
-        The lower y-coordinate of the text object.
-    y1 : float
-        The upper y-coordinate of the text object.
-    x0 : float
-        The left x-coordinate of the text object.
-    x1 : float
-        The right x-coordinate of the text object.
-    text : str
-        The textual content of the object.
-
-    """
-
-    y0: float
-    y1: float
-    x0: float
-    x1: float
-    text: str
-
-    @property
-    def yc(self) -> float:
-        """float: The vertical centre coordinate."""
-        return (self.y1 + self.y0) / 2
-
-    @property
-    def xc(self) -> float:
-        """float: The horizontal centre coordinate."""
-        return (self.x1 + self.x0) / 2
-
-
-@dataclass
-class SPTReport:
-    borehole_id: int
-    """The borehole ID number for this report."""
-
-    nzgd_id: int
-    """The NZGD D number for this report."""
-
-    efficiency: float | None
-    """The hammer efficiency ratio."""
-
-    borehole_diameter: float | None
-    """The diameter of the borehole."""
-
-    extracted_gwl: float | None
-    """The extracted ground water level for the SPT (borehole) report."""
-
-    source_file: Path
-    """The path to the report."""
-
-    spt_measurements: pd.DataFrame
-    """The SPT record. A data frame with columns Depth, and N."""
-
-    soil_measurements: pd.DataFrame
-    """The SPT soil measurements. A dataframe with columns 'top_depth', and 'soil_types'"""
 
 
 def extract_soil_report(description: str) -> set[str]:
@@ -574,7 +512,6 @@ def _analyze_text_objects(
         borehole_id=borehole_id(report),
         nzgd_id=borehole_id(report),
         efficiency=hammer_efficiency,
-        borehole_diameter=None,
         extracted_gwl=None,
         source_file=report,
         spt_measurements=df,
@@ -612,7 +549,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             report.borehole_id,
             report.borehole_id,
             report.efficiency,
-            report.borehole_diameter,
             report.extracted_gwl,
             report.source_file.name,
         )
@@ -620,8 +556,8 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
     ]
     cursor.executemany(
         """
-        INSERT OR REPLACE INTO sptreport (borehole_id, nzgd_id, efficiency, borehole_diameter, extracted_gwl, source_file)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO sptreport (borehole_id, nzgd_id, efficiency, extracted_gwl, source_file)
+        VALUES (?, ?, ?, ?, ?)
     """,
         report_data,
     )
@@ -763,7 +699,8 @@ def mine_borehole_log(
         if report.borehole_id in jake_extracted_borehole_ids
     ]
 
-    print()
+    # print()
+    # reports = reports_including_incorrect
 
     with sqlite3.connect(output_path) as db:
         serialize_reports(reports, db)

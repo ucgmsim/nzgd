@@ -320,9 +320,9 @@ if __name__ == "__main__":
             db,
         )
 
-        serialize_correlation_tables(db)
+        # serialize_correlation_tables(db)
 
-        serialize_spt_hammer_type_table(db)
+        # serialize_spt_hammer_type_table(db)
 
         serialize_investigation_type_table(db)
 
