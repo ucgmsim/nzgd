@@ -81,44 +81,44 @@ class Suburb(BaseModel):
     """str: The name of the suburb."""
 
 
-# class CPTToVsCorrelation(BaseModel):
-#     """Represents a CPT to Vs correlation in the database."""
+class CPTToVsCorrelation(BaseModel):
+    """Represents a CPT to Vs correlation in the database."""
 
-#     id = IntegerField(primary_key=True)
-#     """int: The unique identifier for the CPT to Vs correlation."""
+    id = IntegerField(primary_key=True)
+    """int: The unique identifier for the CPT to Vs correlation."""
 
-#     value = TextField()
-#     """str: The CPT to Vs correlation"""
-
-
-# class SPTToVsCorrelation(BaseModel):
-#     """Represents an SPT to Vs correlation in the database."""
-
-#     id = IntegerField(primary_key=True)
-#     """int: The unique identifier for the SPT to Vs correlation."""
-
-#     value = TextField()
-#     """str: The SPT to Vs correlation"""
+    value = TextField()
+    """str: The CPT to Vs correlation"""
 
 
-# class VsToVs30Correlation(BaseModel):
-#     """Represents a Vs30 estimate in the database."""
+class SPTToVsCorrelation(BaseModel):
+    """Represents an SPT to Vs correlation in the database."""
 
-#     id = IntegerField(primary_key=True)
-#     """int: The unique identifier for the Vs30 estimate."""
+    id = IntegerField(primary_key=True)
+    """int: The unique identifier for the SPT to Vs correlation."""
 
-#     value = TextField()
-#     """str: The Vs30 estimate"""
+    value = TextField()
+    """str: The SPT to Vs correlation"""
 
 
-# class SPTToVs30HammerType(BaseModel):
-#     """Represents an SPT hammer type in the database."""
+class VsToVs30Correlation(BaseModel):
+    """Represents a Vs30 estimate in the database."""
 
-#     id = IntegerField(primary_key=True)
-#     """int: The unique identifier for the hammer type."""
+    id = IntegerField(primary_key=True)
+    """int: The unique identifier for the Vs30 estimate."""
 
-#     value = TextField()
-#     """str: The hammer type for the Vs30 estimate."""
+    value = TextField()
+    """str: The Vs30 estimate"""
+
+
+class SPTToVs30HammerType(BaseModel):
+    """Represents an SPT hammer type in the database."""
+
+    id = IntegerField(primary_key=True)
+    """int: The unique identifier for the hammer type."""
+
+    value = TextField()
+    """str: The hammer type for the Vs30 estimate."""
 
 
 class TerminationReason(BaseModel):
@@ -364,87 +364,87 @@ class CPTMeasurements(BaseModel):
     """float: The pore water pressure at the specified depth."""
 
 
-# class CPTVs30Estimates(BaseModel):
-#     """Represents a Vs30 estimate calculated from a CPT record"""
+class CPTVs30Estimates(BaseModel):
+    """Represents a Vs30 estimate calculated from a CPT record"""
 
-#     vs30_id = IntegerField(primary_key=True)
-#     """int: The unique identifier for the Vs30 estimate."""
+    vs30_id = IntegerField(primary_key=True)
+    """int: The unique identifier for the Vs30 estimate."""
 
-#     cpt_id = ForeignKeyField(CPTReport, backref="vs30_estimates")
-#     """int: The foreign key referencing the associated CPT report."""
+    cpt_id = ForeignKeyField(CPTReport, backref="vs30_estimates")
+    """int: The foreign key referencing the associated CPT report."""
 
-#     nzgd_id = ForeignKeyField(NZGDRecord, backref="cpt_vs30_estimates")
-#     """int: The foreign key referencing the associated NZGD record."""
+    nzgd_id = ForeignKeyField(NZGDRecord, backref="cpt_vs30_estimates")
+    """int: The foreign key referencing the associated NZGD record."""
 
-#     cpt_to_vs_correlation_id = ForeignKeyField(
-#         CPTToVsCorrelation,
-#         backref="cpt_to_vs_correlation",
-#     )
-#     """int: The foreign key referencing the CPT to Vs correlation."""
+    cpt_to_vs_correlation_id = ForeignKeyField(
+        CPTToVsCorrelation,
+        backref="cpt_to_vs_correlation",
+    )
+    """int: The foreign key referencing the CPT to Vs correlation."""
 
-#     vs_to_vs30_correlation_id = ForeignKeyField(
-#         VsToVs30Correlation,
-#         backref="vs_to_vs30_correlation",
-#     )
-#     """int: The foreign key referencing the Vs to Vs30 correlation."""
+    vs_to_vs30_correlation_id = ForeignKeyField(
+        VsToVs30Correlation,
+        backref="vs_to_vs30_correlation",
+    )
+    """int: The foreign key referencing the Vs to Vs30 correlation."""
 
-#     vs30 = FloatField(null=True)
-#     """float: The calculated Vs30 value."""
+    vs30 = FloatField(null=True)
+    """float: The calculated Vs30 value."""
 
-#     vs30_stddev = FloatField(null=True)
-#     """float: The calculated Vs30 standard deviation value."""
+    vs30_stddev = FloatField(null=True)
+    """float: The calculated Vs30 standard deviation value."""
 
-#     class Meta:
-#         indexes = (
-#             # (column, ,), (boolean for is unique, ,), ...
-#             (("cpt_id",), False),
-#             (("nzgd_id",), False),
-#             (("cpt_to_vs_correlation_id",), False),
-#             (("vs_to_vs30_correlation_id",), False),
-#             (("vs30",), False),
-#         )
+    class Meta:
+        indexes = (
+            # (column, ,), (boolean for is unique, ,), ...
+            (("cpt_id",), False),
+            (("nzgd_id",), False),
+            (("cpt_to_vs_correlation_id",), False),
+            (("vs_to_vs30_correlation_id",), False),
+            (("vs30",), False),
+        )
 
 
-# class SPTVs30Estimates(BaseModel):
-#     """Represents a Vs30 estimate calculated from a SPT record"""
+class SPTVs30Estimates(BaseModel):
+    """Represents a Vs30 estimate calculated from a SPT record"""
 
-#     vs30_id = IntegerField(primary_key=True)
-#     """int: The unique identifier for the Vs30 estimate."""
+    vs30_id = IntegerField(primary_key=True)
+    """int: The unique identifier for the Vs30 estimate."""
 
-#     spt_id = ForeignKeyField(SPTReport, backref="vs30_estimates")
-#     """int: The foreign key referencing the associated SPT report."""
+    spt_id = ForeignKeyField(SPTReport, backref="vs30_estimates")
+    """int: The foreign key referencing the associated SPT report."""
 
-#     spt_to_vs_correlation_id = ForeignKeyField(
-#         SPTToVsCorrelation,
-#         backref="spt_to_vs_correlation",
-#     )
-#     """int: The foreign key referencing the SPT to Vs correlation."""
+    spt_to_vs_correlation_id = ForeignKeyField(
+        SPTToVsCorrelation,
+        backref="spt_to_vs_correlation",
+    )
+    """int: The foreign key referencing the SPT to Vs correlation."""
 
-#     vs_to_vs30_correlation_id = ForeignKeyField(
-#         VsToVs30Correlation,
-#         backref="vs_to_vs30_correlation",
-#     )
-#     """int: The foreign key referencing the Vs to Vs30 correlation."""
+    vs_to_vs30_correlation_id = ForeignKeyField(
+        VsToVs30Correlation,
+        backref="vs_to_vs30_correlation",
+    )
+    """int: The foreign key referencing the Vs to Vs30 correlation."""
 
-#     borehole_diameter = FloatField(null=True)
-#     """float: The diameter of the borehole."""
+    borehole_diameter = FloatField(null=True)
+    """float: The diameter of the borehole."""
 
-#     hammer_type_id = ForeignKeyField(SPTToVs30HammerType, backref="hammer_type")
-#     """str: The ID of the hammer type used."""
+    hammer_type_id = ForeignKeyField(SPTToVs30HammerType, backref="hammer_type")
+    """str: The ID of the hammer type used."""
 
-#     vs30_used_efficiency = IntegerField(null=True)
-#     """int: A Boolean representing whether information about the SPT efficiency was used for the Vs30 estimate
-#     0 = False, 1 = True."""
+    vs30_used_efficiency = IntegerField(null=True)
+    """int: A Boolean representing whether information about the SPT efficiency was used for the Vs30 estimate
+    0 = False, 1 = True."""
 
-#     vs30_used_soil_info = IntegerField(null=True)
-#     """int: A Boolean representing whether information about the soil type was used for the Vs30 estimate
-#     0 = False, 1 = True."""
+    vs30_used_soil_info = IntegerField(null=True)
+    """int: A Boolean representing whether information about the soil type was used for the Vs30 estimate
+    0 = False, 1 = True."""
 
-#     vs30 = FloatField(null=True)
-#     """float: The calculated Vs30 value."""
+    vs30 = FloatField(null=True)
+    """float: The calculated Vs30 value."""
 
-#     vs30_stddev = FloatField(null=True)
-#     """float: The calculated Vs30 standard deviation value."""
+    vs30_stddev = FloatField(null=True)
+    """float: The calculated Vs30 standard deviation value."""
 
 
 def initialize_db():
@@ -457,10 +457,10 @@ def initialize_db():
                 District,
                 City,
                 Suburb,
-                # CPTToVsCorrelation,
-                # SPTToVsCorrelation,
-                # VsToVs30Correlation,
-                # SPTToVs30HammerType,
+                CPTToVsCorrelation,
+                SPTToVsCorrelation,
+                VsToVs30Correlation,
+                SPTToVs30HammerType,
                 TerminationReason,
                 CPTGroundWaterLevelMethod,
                 SoilTypes,
@@ -471,7 +471,7 @@ def initialize_db():
                 SPTMeasurements,
                 CPTReport,
                 CPTMeasurements,
-                # CPTVs30Estimates,
-                # SPTVs30Estimates,
+                CPTVs30Estimates,
+                SPTVs30Estimates,
             ],
         )
