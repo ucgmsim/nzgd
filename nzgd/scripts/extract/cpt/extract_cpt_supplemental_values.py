@@ -626,7 +626,7 @@ if __name__ == "__main__":
     cpt_list = natsorted(
         list(
             Path(
-                f"/home/arr65/data/nzgd/downloads_and_metadata/unorganised_raw_from_nzgd/{investigation_type}",
+                f"/home/arr65/data/nzgd/downloads_and_metadata/nzgd_investigation_source_files_from_webcrawler_11_Sep_2025/{investigation_type}",
             ).glob("*"),
         ),
     )
@@ -685,6 +685,6 @@ if __name__ == "__main__":
                 )
 
     results_df.to_csv(
-        output_dir / f"{investigation_type}_v9.csv",
+        output_dir / f"{investigation_type}_v10.csv",
         index=False,
     )

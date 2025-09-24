@@ -293,7 +293,7 @@ class CPTReport(BaseModel):
     min_depth = FloatField(null=True)
     """"float: The minimum depth of the CPT report"""
 
-    gwl = FloatField(null=True)
+    extracted_gwl = FloatField(null=True)
     """float: The extracted ground water level for the CPT report."""
 
     gwl_method_id = ForeignKeyField(

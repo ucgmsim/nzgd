@@ -1,6 +1,6 @@
 output_directory: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/extracted_nzgd_v6.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd.db"
 
 
 investigation_types:

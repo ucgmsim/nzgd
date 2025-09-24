@@ -125,7 +125,7 @@ def serialize_cpt_reports(
         cursor.execute(
             """
             INSERT OR REPLACE INTO cptreport (
-                cpt_id, nzgd_id, max_depth, min_depth, gwl, gwl_method_id, gwl_residual,
+                cpt_id, nzgd_id, max_depth, min_depth, extracted_gwl, gwl_method_id, gwl_residual,
                 tip_net_area_ratio, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
                 did_explicit_unit_conversion, did_inferred_unit_conversion, source_file
             )

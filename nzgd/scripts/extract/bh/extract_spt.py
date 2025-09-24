@@ -8,13 +8,8 @@ from nzgd import constants
 from nzgd.extract.bh import ags_miner
 
 pdf_dir = Path(
-    "/home/arr65/data/nzgd/downloads_and_metadata/borehole_files_by_type/test_pdf",
+    "/home/arr65/data/nzgd/downloads_and_metadata/borehole_files_by_type/pdf",
 )
-
-# pdf_dir = Path(
-#     "/home/arr65/data/api_nzgd/borehole_files_by_type/pdf",
-# )
-
 
 ags_dir = Path(
     "/home/arr65/data/nzgd/downloads_and_metadata/borehole_files_by_type/ags"
