@@ -10,7 +10,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from natsort import natsorted
 from tqdm import tqdm
 
 from nzgd import constants
@@ -131,36 +130,35 @@ def get_searchable_sheets(nzgd_id: int) -> list[data_structures.SearchableSheet]
         A list of searchable sheets.
 
     """
-    if nzgd_id in constants.CPT_IDS:
-        record_ffp = constants.NZGD_SOURCE_DATA_DIR / "cpt" / f"CPT_{nzgd_id}"
-    if nzgd_id in constants.SCPT_IDS:
-        record_ffp = constants.NZGD_SOURCE_DATA_DIR / "scpt" / f"SCPT_{nzgd_id}"
-
-    available_files_for_record = list(record_ffp.glob("*.*"))
 
     csv_txt_iterables = []
     xls_xlsx_iterables = []
 
-    csv_txt_files = [
-        file
-        for file in available_files_for_record
-        if file.suffix.lower() in [".csv", ".txt"]
-    ]
+    record_ffp = constants.NZGD_SOURCE_DATA_DIR / str(nzgd_id)
 
-    xls_xlsx_files = [
-        file
-        for file in available_files_for_record
-        if file.suffix.lower() in [".xls", ".xlsx"]
-    ]
+    if record_ffp.exists():
+        available_files_for_record = list(record_ffp.glob("*.*"))
 
-    for file in csv_txt_files:
-        csv_txt_iterables.append(get_csv_txt_iterable(nzgd_id, file))
+        csv_txt_files = [
+            file
+            for file in available_files_for_record
+            if file.suffix.lower() in [".csv", ".txt"]
+        ]
 
-    for file in xls_xlsx_files:
-        sheets_as_iterables = get_xls_xlsx_iterable(nzgd_id, file)
+        xls_xlsx_files = [
+            file
+            for file in available_files_for_record
+            if file.suffix.lower() in [".xls", ".xlsx"]
+        ]
 
-        for sheet_iterable in sheets_as_iterables:
-            xls_xlsx_iterables.append(sheet_iterable)
+        for file in csv_txt_files:
+            csv_txt_iterables.append(get_csv_txt_iterable(nzgd_id, file))
+
+        for file in xls_xlsx_files:
+            sheets_as_iterables = get_xls_xlsx_iterable(nzgd_id, file)
+
+            for sheet_iterable in sheets_as_iterables:
+                xls_xlsx_iterables.append(sheet_iterable)
 
     return csv_txt_iterables + xls_xlsx_iterables
 
@@ -618,34 +616,25 @@ def do_search(
 
 
 if __name__ == "__main__":
-    # investigation_type = "scpt"
-    investigation_type = "cpt"
+    nzgd_index_df = pd.read_csv(str(constants.INDEX_FILE_PATH))
 
-    ground_water_level_strings = []
-
-    cpt_list = natsorted(
-        list(
-            Path(
-                f"/home/arr65/data/nzgd/downloads_and_metadata/nzgd_investigation_source_files_from_webcrawler_11_Sep_2025/{investigation_type}",
-            ).glob("*"),
-        ),
-    )
-
-    output_dir = Path(
-        "/home/arr65/data/nzgd/extracted_single_values_V3/all_possible_values",
-    )
+    output_dir = constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    nzgd_id_list = natsorted([int(cpt_id.name.split("_")[1]) for cpt_id in cpt_list])
+    cpt_ids = sorted(nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist())
+
+    # cpt_ids = cpt_ids[0:2]
+
+    # nzgd_id_list = natsorted([int(cpt_id.name.split("_")[1]) for cpt_id in cpt_list])
 
     results_with_none = []
-    num_workers = 7
+    num_workers = 8
     with mp.Pool(processes=num_workers) as pool:
         results_with_none.extend(
             list(
                 tqdm(
-                    pool.imap(do_search, nzgd_id_list),
-                    total=len(nzgd_id_list),
+                    pool.imap(do_search, cpt_ids),
+                    total=len(cpt_ids),
                 ),
             ),
         )
@@ -685,6 +674,6 @@ if __name__ == "__main__":
                 )
 
     results_df.to_csv(
-        output_dir / f"{investigation_type}_v10.csv",
+        constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR / "cpt_supplemental_values.csv",
         index=False,
     )

@@ -16,6 +16,22 @@ INDEX_FILE_PATH = RESOURCE_PATH / "nzgd_metadata_from_coordinates_22_august_2025
 with (RESOURCE_PATH / "config.yaml").open() as f:
     CONFIG = yaml.safe_load(f)
 
+CPT_TRACE_OUTPUT_DIR = Path(CONFIG["base_output_dir"]) / Path(
+    CONFIG["subdirectories"]["cpt_trace"]
+)
+
+FAILED_CPT_TRACE_OUTPUT_DIR = Path(CONFIG["base_output_dir"]) / Path(
+    CONFIG["subdirectories"]["failed_cpt_trace"]
+)
+
+
+SUPPLEMENTAL_VALUES_OUTPUT_DIR = Path(CONFIG["base_output_dir"]) / Path(
+    CONFIG["subdirectories"]["supplemental_values"]
+)
+
+NZGD_SOURCE_DATA_DIR = Path(
+    CONFIG["nzgd_source_data_dir"],
+)
 
 OUTPUT_DB_PATH = CONFIG["output_db_path"]
 
@@ -51,22 +67,6 @@ REQUIRED_NUMBER_OF_COLUMNS = 4
 INFER_WRONG_UNITS_THRESHOLDS = CONFIG[
     "infer_wrong_units_thresholds"
 ]  # Dictionary with keys as column names and values as thresholds
-
-
-class InvestigationType(enum.StrEnum):
-    """Enumeration of the investigation types for which data can be extracted.
-
-    Attributes
-    ----------
-    cpt : str
-        Represents a Cone Penetration Test (CPT) investigation type.
-    scpt : str
-        Represents a Seismic Cone Penetration Test (SCPT) investigation type.
-
-    """
-
-    cpt = "cpt"
-    scpt = "scpt"
 
 
 class ExcelEngine(enum.StrEnum):
@@ -117,34 +117,7 @@ class QuantityToExtract(enum.StrEnum):
     tip_net_area_ratio = "tip_net_area_ratio"
 
 
-OUTPUT_DIRECTORY = Path(CONFIG["output_directory"])
-
-loaded_investigation_types = CONFIG["investigation_types"]
-
-INVESTIGATION_TYPES = []
-for loaded_investigation_type in loaded_investigation_types:
-    if loaded_investigation_type.lower() == "cpt":
-        INVESTIGATION_TYPES.append(InvestigationType.cpt)
-    if loaded_investigation_type.lower() == "scpt":
-        INVESTIGATION_TYPES.append(InvestigationType.scpt)
-
-
-NZGD_SOURCE_DATA_DIR = Path(
-    CONFIG["nzgd_source_data_dir"],
-)
-
 ENCODINGS_TO_TRY = CONFIG["encodings_to_try"]
-
-CPT_PATHS = list(
-    (NZGD_SOURCE_DATA_DIR / "cpt").glob("*"),
-)
-
-SCPT_PATHS = list(
-    (NZGD_SOURCE_DATA_DIR / "scpt").glob("*"),
-)
-
-CPT_IDS = set([int(cpt.stem.split("_")[1]) for cpt in CPT_PATHS])
-SCPT_IDS = set([int(scpt.stem.split("_")[1]) for scpt in SCPT_PATHS])
 
 # Key words for termination reason, ground water level, and tip net area ratio
 
@@ -327,6 +300,7 @@ search_gwl__incl_not_measured = [
     *gwl__not_measured_terms,
 ]
 
+
 term_dict = {
     "target": {
         "assuming_cell_is_standalone": search_target__from_one_cell__target_depth_reached
@@ -477,6 +451,31 @@ term_dict = {
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
     },
     "alphafactor": {
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+    },
+    "waterlevel": {
+        "assuming_cell_is_standalone": search_gwl__incl_not_measured,
+        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": search_gwl__incl_not_measured,
+    },
+    "predrill": {
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+    },
+    "pre-drill": {
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+    },
+    "pre-drill (m)": {
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+    },
+    "predrilled": {
         "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],

@@ -1,13 +1,11 @@
-output_directory: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data"
-
+base_output_dir: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data"
+subdirectories:
+  cpt_trace: "extracted_cpt_trace_per_record"
+  failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
+  supplemental_values: "extracted_supplemental_values"
 output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd.db"
 
-
-investigation_types:
-  - CPT
-  - SCPT
-
-nzgd_source_data_dir: "/home/arr65/data/nzgd/downloads_and_metadata/nzgd_investigation_source_files_from_webcrawler_11_Sep_2025"
+nzgd_source_data_dir: "/home/arr65/data/nzgd/downloads/nzgd_source_files"
 
 cpt_column_name_descriptions:
   Depth: "depth in m"
@@ -91,6 +89,3 @@ infer_wrong_units_thresholds:
   fs_kpa_threshold: 10 # fs values consistently exceeding this threshold indicates that fs is in kPa.
   u_kpa_threshold: 5 # u values consistently exceeding this threshold indicates that u is in kPa.
   percent_exceeding_threshold: 75.0 # If greater than this percentage of data points exceed a parameter's threshold value, the parameter will be converted to its corresponding unit.
-
-path_to_cpt_files: "/home/arr65/data/nzgd/downloads_and_metadata/unorganised_raw_from_nzgd/cpt"
-path_to_scpt_files: "/home/arr65/data/nzgd/downloads_and_metadata/unorganised_raw_from_nzgd/scpt"
