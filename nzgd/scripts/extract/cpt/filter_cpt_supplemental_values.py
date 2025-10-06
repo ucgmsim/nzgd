@@ -6,7 +6,6 @@ for terminating the CPT investigation.
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -24,6 +23,7 @@ class ExtractedSingleValues:
     ground_water_level: float | None = None
     ground_water_level_note: str | None = None
     tip_net_area_ratio: float | None = None
+    predrill_depth: float | None = None
 
 
 class ExtractedSingleValuesDict(dict):
@@ -131,7 +131,7 @@ def gwl_method_flag(field_label: str) -> str | None:
     return None
 
 
-def extract_gwl_or_tnar(
+def extract_numerical_quantity(
     extracted_values: ExtractedSingleValues,
     possible_df: pd.DataFrame,
     quantity_to_extract: constants.QuantityToExtract,
@@ -229,7 +229,7 @@ def extract_gwl_or_tnar(
 
     extracted_values_df = extracted_values_df[selected_bool_mask]
 
-    # If there is multiple options, all are valid, so just return the first one
+    # If there are multiple options, all are valid, so just return the first one
 
     if quantity_to_extract == constants.QuantityToExtract.ground_water_level:
         extracted_values.ground_water_level = extracted_values_df[
@@ -240,7 +240,7 @@ def extract_gwl_or_tnar(
             "ground_water_level_note"
         ].iloc[0]
 
-    if quantity_to_extract == constants.QuantityToExtract.tip_net_area_ratio:
+    else:
         extracted_values.tip_net_area_ratio = extracted_values_df[
             quantity_to_extract
         ].iloc[0]
@@ -367,17 +367,12 @@ quantity_to_search_term = {
         "alpha factor",
         "alphafactor",
     ],
+    "predrill_depth": ["predrill", "pre-drill", "pre-drill (m)", "predrilled"],
 }
 
-investigation_type = "cpt"
-# investigation_type = "scpt"
-
-working_dir = Path(
-    "/home/arr65/data/nzgd/extracted_single_values_V3/all_possible_values",
-)
-
 all_options_df = pd.read_csv(
-    working_dir / f"{investigation_type}_v9.csv",
+    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
+    / "possible_values_for_cpt_supplemental_values.csv",
 )
 
 # Create reverse mapping from search term to quantity description
@@ -392,6 +387,8 @@ all_options_df["quantity_description"] = all_options_df["search_term"].map(
 )
 
 unique_nzgd_id = all_options_df["nzgd_id"].unique()
+
+print()
 
 # Initialize the dictionary to store extracted values
 extracted_values_dict = ExtractedSingleValuesDict()
@@ -416,6 +413,7 @@ for nzgd_id in tqdm(unique_nzgd_id):
             extracted_values = extracted_values_dict[key]
 
             unique_quantity_descriptions = per_sheet["quantity_description"].unique()
+            print()
 
             for quantity_description in unique_quantity_descriptions:
                 if quantity_description is None:
@@ -440,17 +438,25 @@ for nzgd_id in tqdm(unique_nzgd_id):
                     )
 
                 if quantity_description == "ground_water_level":
-                    extracted_values = extract_gwl_or_tnar(
+                    extracted_values = extract_numerical_quantity(
                         extracted_values,
                         per_quantity_description,
                         constants.QuantityToExtract.ground_water_level,
                     )
 
                 if quantity_description == "tip_net_area_ratio":
-                    extracted_values = extract_gwl_or_tnar(
+                    extracted_values = extract_numerical_quantity(
                         extracted_values,
                         per_quantity_description,
                         constants.QuantityToExtract.tip_net_area_ratio,
+                    )
+
+                if quantity_description == "predrill_depth":
+                    print("Extracting predrill_depth")
+                    extracted_values = extract_numerical_quantity(
+                        extracted_values,
+                        per_quantity_description,
+                        constants.QuantityToExtract.predrill_depth,
                     )
 
             extracted_values_dict[key] = extracted_values
@@ -467,6 +473,7 @@ for key, values in extracted_values_dict.items():
         "ground_water_level": values.ground_water_level,
         "gwl_method": values.ground_water_level_note,
         "tip_net_area_ratio": values.tip_net_area_ratio,
+        "predrill_depth": values.predrill_depth,
     }
     df_data.append(row_data)
 
@@ -474,6 +481,7 @@ for key, values in extracted_values_dict.items():
 extracted_df = pd.DataFrame(df_data)
 
 extracted_df.to_csv(
-    working_dir.parent / f"{investigation_type}_v9.csv",
+    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR / "cpt_supplemental_values.csv",
     index=False,
 )
+print()

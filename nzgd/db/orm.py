@@ -308,7 +308,10 @@ class CPTReport(BaseModel):
     level model."""
 
     tip_net_area_ratio = FloatField(null=True)
-    """float: The tip net area ratio for the CPT report."""
+    """float: The tip net area ratio of the CPT."""
+
+    predrill_depth = FloatField(null=True)
+    """float: The pre-drill depth of the CPT."""
 
     termination_reason_id = ForeignKeyField(
         TerminationReason,

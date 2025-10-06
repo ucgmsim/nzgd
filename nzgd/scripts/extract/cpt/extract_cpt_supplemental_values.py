@@ -623,7 +623,7 @@ if __name__ == "__main__":
 
     cpt_ids = sorted(nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist())
 
-    # cpt_ids = cpt_ids[0:2]
+    cpt_ids = cpt_ids[0:1]
 
     # nzgd_id_list = natsorted([int(cpt_id.name.split("_")[1]) for cpt_id in cpt_list])
 
@@ -674,6 +674,8 @@ if __name__ == "__main__":
                 )
 
     results_df.to_csv(
-        constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR / "cpt_supplemental_values.csv",
+        constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
+        / "possible_values_for_cpt_supplemental_values.csv",
         index=False,
     )
+print()
