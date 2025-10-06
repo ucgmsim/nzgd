@@ -1,17 +1,39 @@
 """A simple script to run Jake Faulkner's borehole data extraction code."""
 
-from pathlib import Path
+import sqlite3
+
+import pandas as pd
 
 from nzgd import constants
 from nzgd.extract.bh import ags_miner, miner
 
-pdf_dir = Path(
-    "/home/arr65/data/nzgd/downloads_and_metadata/borehole_files_by_type/pdf",
-)
+# Jake applied a filtering as some incorrect extractions are not in his database.
+# Jake's filtering criteria are not known, the extraction code and input data have
+# not changed, so we only keep extractions that are also in his database.
 
-ags_dir = Path(
-    "/home/arr65/data/nzgd/downloads_and_metadata/borehole_files_by_type/ags"
-)
+jake_conn = sqlite3.connect("/home/arr65/Downloads/jake_geodata.db")
+jake_sptreport_df = pd.read_sql_query("SELECT * FROM sptreport", jake_conn)
+jake_conn.close()
+jake_extracted_borehole_ids = jake_sptreport_df["borehole_id"].tolist()
 
-miner.mine_borehole_log(pdf_dir, constants.OUTPUT_DB_PATH)
-ags_miner.mine_borehole_log(ags_dir, constants.OUTPUT_DB_PATH)
+nzgd_index_df = pd.read_csv(constants.INDEX_FILE_PATH)
+
+nzgd_index_df = nzgd_index_df[
+    nzgd_index_df["TypeDisplay"].isin(constants.NZGD_TypeDisplay_VALUES_FOR_BOREHOLES)
+    & nzgd_index_df["nzgd_id"].isin(jake_extracted_borehole_ids)
+]
+
+pdf_files = []
+ags_files = []
+
+for nzgd_id in nzgd_index_df["nzgd_id"]:
+    available_files = list((constants.NZGD_SOURCE_DATA_DIR / str(nzgd_id)).glob("*"))
+
+    for f in available_files:
+        if f.suffix.lower() == ".pdf":
+            pdf_files.append(f)
+        elif f.suffix.lower() == ".ags":
+            ags_files.append(f)
+
+miner.mine_borehole_log(pdf_files, constants.OUTPUT_DB_PATH)
+ags_miner.mine_borehole_log(ags_files, constants.OUTPUT_DB_PATH)

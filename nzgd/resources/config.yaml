@@ -3,7 +3,18 @@ subdirectories:
   cpt_trace: "extracted_cpt_trace_per_record"
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p1p1_20251007.db"
+
+nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
+
+nzgd_TypeDisplay_values_for_boreholes:
+  - "Rotary Cored borehole"
+  - "borehole_definition_from_previous_nzgd"
+  - "Wash boring"
+  - "Rotary open hole borehole"
+
+nzgd_TypeDisplay_values_for_CPTs:
+  - "CPT - Cone Penetration Test"
 
 nzgd_source_data_dir: "/home/arr65/data/nzgd/downloads/nzgd_source_files"
 

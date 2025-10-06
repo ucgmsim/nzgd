@@ -10,11 +10,14 @@ import yaml
 # Define the resource directory
 RESOURCE_PATH = importlib.resources.files("nzgd") / "resources"
 
-INDEX_FILE_PATH = RESOURCE_PATH / "nzgd_metadata_from_coordinates_22_august_2025.csv"
-
 # Load all configurations from the YAML file
 with (RESOURCE_PATH / "config.yaml").open() as f:
     CONFIG = yaml.safe_load(f)
+
+INDEX_FILE_PATH = RESOURCE_PATH / CONFIG["nzgd_index_file_name"]
+
+NZGD_TypeDisplay_VALUES_FOR_BOREHOLES = CONFIG["nzgd_TypeDisplay_values_for_boreholes"]
+NZGD_TypeDisplay_VALUES_FOR_CPTS = CONFIG["nzgd_TypeDisplay_values_for_CPTs"]
 
 CPT_TRACE_OUTPUT_DIR = Path(CONFIG["base_output_dir"]) / Path(
     CONFIG["subdirectories"]["cpt_trace"]
@@ -33,7 +36,7 @@ NZGD_SOURCE_DATA_DIR = Path(
     CONFIG["nzgd_source_data_dir"],
 )
 
-OUTPUT_DB_PATH = CONFIG["output_db_path"]
+OUTPUT_DB_PATH = Path(CONFIG["output_db_path"])
 
 # Get relevant file extensions from the configuration file
 FILE_EXTENSIONS = CONFIG["file_extensions"]
@@ -115,6 +118,7 @@ class QuantityToExtract(enum.StrEnum):
 
     ground_water_level = "ground_water_level"
     tip_net_area_ratio = "tip_net_area_ratio"
+    predrill_depth = "predrill_depth"
 
 
 ENCODINGS_TO_TRY = CONFIG["encodings_to_try"]
@@ -279,8 +283,11 @@ search_comment__from_one_cell__values_for_target_depth_reached = [
 # Note: This pattern ensures that if a decimal point exists, digits must follow it
 NUMERICAL_VALUES_REGEX = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
 
-MAX_ALLOWED_GWL = 40
+MAX_ALLOWED_GWL = 1000
 MIN_ALLOWED_GWL = 0
+
+MAX_ALLOWED_PREDRILLED_DEPTH = 50
+MIN_ALLOWED_PREDRILLED_DEPTH = 0
 
 MAX_ALLOWED_TNAR = 1.0
 MIN_ALLOWED_TNAR = 0.2
@@ -466,11 +473,6 @@ term_dict = {
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
     },
     "pre-drill": {
-        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
-        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
-    },
-    "pre-drill (m)": {
         "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],

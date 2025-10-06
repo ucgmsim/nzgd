@@ -301,15 +301,13 @@ def serialize_location_name_tables(metadata_df: pd.DataFrame, conn: sqlite3.Conn
 
 if __name__ == "__main__":
     metadata_from_location_coordinates = pd.read_csv(
-        "/home/arr65/src/nzgd_data_extraction/nzgd_data_extraction/resources/nzgd_metadata_from_coordinates_22_august_2025.csv",
+        constants.INDEX_FILE_PATH,
     )
 
     orm.initialize_db()
 
-    print()
-
     with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
-        ### needs to be in the db for Jake's SPT mining code to work
+        # needs to be in the db for Jake's SPT mining code to work
         serialize_spt_soil_type_table(
             db,
         )
@@ -320,9 +318,9 @@ if __name__ == "__main__":
             db,
         )
 
-        # serialize_correlation_tables(db)
+        serialize_correlation_tables(db)
 
-        # serialize_spt_hammer_type_table(db)
+        serialize_spt_hammer_type_table(db)
 
         serialize_investigation_type_table(db)
 

@@ -320,44 +320,26 @@ def mine_individual_borehole(
         )
 
 
-@app.command(help="Extract borehole SPT data from a directory.", name="directory")
 def mine_borehole_log(
-    report_directory: Annotated[
-        Path,
-        typer.Argument(
-            help="Path to the directory containing borehole PDF reports.",
-            exists=True,
-            readable=True,
-            file_okay=False,
-        ),
-    ],
-    output_path: Annotated[
-        Path,
-        typer.Argument(
-            help="Path to save the consolidated output as a database.",
-            writable=True,
-            exists=False,
-            dir_okay=False,
-        ),
-    ],
+    input_file_paths: list[Path],
+    output_path: Path,
 ) -> None:
     """Extract and consolidate borehole log data from a directory of reports.
 
     Parameters
     ----------
-    report_directory : Path
-        Path to the directory containing borehole PDF reports.
+    input_file_paths : list[Path]
+        List of paths to the borehole log AGS files.
     output_path : Path
-        Path to save the consolidated output as a Parquet file.
+        Path to the output SQLite database.
 
     """
-    pdfs = list(report_directory.rglob("*.ags"))
     with multiprocessing.Pool() as pool:
         reports_including_incorrect = [
             report
             for report in tqdm.tqdm(
-                pool.imap(process_borehole_no_exceptions, pdfs),
-                total=len(pdfs),
+                pool.imap(process_borehole_no_exceptions, input_file_paths),
+                total=len(input_file_paths),
             )
             if report is not None
         ]
