@@ -35,5 +35,6 @@ for nzgd_id in nzgd_index_df["nzgd_id"]:
         elif f.suffix.lower() == ".ags":
             ags_files.append(f)
 
+
 miner.mine_borehole_log(pdf_files, constants.OUTPUT_DB_PATH)
 ags_miner.mine_borehole_log(ags_files, constants.OUTPUT_DB_PATH)

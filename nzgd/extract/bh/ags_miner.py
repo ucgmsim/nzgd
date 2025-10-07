@@ -334,8 +334,9 @@ def mine_borehole_log(
         Path to the output SQLite database.
 
     """
+
     with multiprocessing.Pool() as pool:
-        reports_including_incorrect = [
+        reports = [
             report
             for report in tqdm.tqdm(
                 pool.imap(process_borehole_no_exceptions, input_file_paths),
@@ -343,21 +344,6 @@ def mine_borehole_log(
             )
             if report is not None
         ]
-
-    # Jake applied a filtering as some incorrect extractions are not in his database.
-    # Jake's filtering criteria are not known, the extraction code and input data have
-    # not changed, so we only keep extractions that are also in his database.
-
-    jake_conn = sqlite3.connect("/home/arr65/Downloads/jake_geodata.db")
-    jake_sptreport_df = pd.read_sql_query("SELECT * FROM sptreport", jake_conn)
-    jake_conn.close()
-    jake_extracted_borehole_ids = jake_sptreport_df["borehole_id"].tolist()
-
-    reports = [
-        report
-        for report in reports_including_incorrect
-        if report.borehole_id in jake_extracted_borehole_ids
-    ]
 
     with sqlite3.connect(output_path) as db:
         serialize_reports(reports, db)

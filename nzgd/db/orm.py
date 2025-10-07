@@ -6,7 +6,11 @@ velocity profiles, and soil measurements. It uses the `peewee` library to intera
 with a SQLite database and provides models and query functions for geotechnical records.
 """
 
+from collections.abc import Iterator
+from typing import Optional
+
 from peewee import (
+    JOIN,
     CompositeKey,
     DateField,
     FloatField,
@@ -15,6 +19,7 @@ from peewee import (
     Model,
     SqliteDatabase,
     TextField,
+    fn,
 )
 
 from nzgd import constants
@@ -414,8 +419,8 @@ class SPTVs30Estimates(BaseModel):
     vs30_id = IntegerField(primary_key=True)
     """int: The unique identifier for the Vs30 estimate."""
 
-    spt_id = ForeignKeyField(SPTReport, backref="vs30_estimates")
-    """int: The foreign key referencing the associated SPT report."""
+    borehole_id = ForeignKeyField(SPTReport, backref="vs30_estimates")
+    """int: The foreign key referencing the associated borehole_id."""
 
     spt_to_vs_correlation_id = ForeignKeyField(
         SPTToVsCorrelation,
@@ -429,25 +434,131 @@ class SPTVs30Estimates(BaseModel):
     )
     """int: The foreign key referencing the Vs to Vs30 correlation."""
 
-    borehole_diameter = FloatField(null=True)
-    """float: The diameter of the borehole."""
+    assumed_borehole_diameter = FloatField(null=True)
+    """float: The assumed diameter of the borehole."""
 
-    hammer_type_id = ForeignKeyField(SPTToVs30HammerType, backref="hammer_type")
-    """str: The ID of the hammer type used."""
+    assumed_hammer_type_id = ForeignKeyField(SPTToVs30HammerType, backref="hammer_type")
+    """str: The ID of the assumed hammer type used."""
 
-    vs30_used_efficiency = IntegerField(null=True)
-    """int: A Boolean representing whether information about the SPT efficiency was used for the Vs30 estimate
-    0 = False, 1 = True."""
+    estimate_used_extracted_efficiency = IntegerField(null=True)
+    """int: A Boolean representing whether extracted information about the SPT 
+    efficiency was used in the Vs30 estimate. 0 = False, 1 = True."""
 
-    vs30_used_soil_info = IntegerField(null=True)
-    """int: A Boolean representing whether information about the soil type was used for the Vs30 estimate
-    0 = False, 1 = True."""
+    estimate_used_extracted_layer_soil_types = IntegerField(null=True)
+    """int: A Boolean representing whether extracted information about layer soil types
+    was used in the Vs30 estimate. 0 = False, 1 = True."""
 
     vs30 = FloatField(null=True)
     """float: The calculated Vs30 value."""
 
     vs30_stddev = FloatField(null=True)
     """float: The calculated Vs30 standard deviation value."""
+
+
+def search_spt_reports(
+    borehole_id: Optional[int] = None,
+    min_efficiency: Optional[float] = None,
+    max_efficiency: Optional[float] = None,
+    nzgd_id: Optional[int] = None,
+    original_investigation_name: Optional[str] = None,
+    max_measurement_depth: Optional[float] = None,
+    min_measurement_depth: Optional[float] = None,
+    region: Optional[str] = None,
+    district: Optional[str] = None,
+    city: Optional[str] = None,
+    suburb: Optional[str] = None,
+) -> Iterator[SPTReport]:
+    """
+    Search for SPT (Standard Penetration Test) reports based on various filters.
+
+    Parameters
+    ----------
+    borehole_id : int, optional
+        Specific borehole ID to filter results.
+    min_efficiency : float, optional
+        Minimum efficiency value for the SPT report.
+    max_efficiency : float, optional
+        Maximum efficiency value for the SPT report.
+    nzgd_id : int, optional
+        ID of the associated NZGDRecord to filter results.
+    original_investigation_name : str, optional
+        Filter by a substring of the NZGDRecord's original reference.
+    max_measurement_depth : float, optional
+        Maximum depth of measurements in the SPT report.
+    min_measurement_depth : float, optional
+        Minimum depth of measurements in the SPT report.
+    region_name : str, optional
+        Name of the region to filter results.
+    district_name : str, optional
+        Name of the district to filter results.
+    city_name : str, optional
+        Name of the city to filter results.
+    suburb_name : str, optional
+        Name of the suburb to filter results.
+
+    Returns
+    -------
+    Iterator of SPTReport
+        A Iterator of `SPTReport` objects that match the specified criteria.
+    """
+    # Start with SPTReport and join related NZGDRecord
+    query = SPTReport.select(SPTReport).join(NZGDRecord, JOIN.INNER)
+
+    # Apply filters for SPTReport fields
+    if borehole_id is not None:
+        query = query.where(SPTReport.borehole_id == borehole_id)
+    if min_efficiency is not None:
+        query = query.where(SPTReport.efficiency >= min_efficiency)
+    if max_efficiency is not None:
+        query = query.where(SPTReport.efficiency <= max_efficiency)
+    if nzgd_id is not None:
+        query = query.where(NZGDRecord.nzgd_id == nzgd_id)
+    if original_investigation_name is not None:
+        query = query.where(
+            NZGDRecord.original_investigation_name.contains(original_investigation_name)
+        )
+    if region is not None:
+        query = (
+            query.switch(NZGDRecord)
+            .join(Region, JOIN.INNER, on=(NZGDRecord.region_id == Region.region_id))
+            .where(Region.name == region)
+        )
+    if district is not None:
+        query = (
+            query.switch(NZGDRecord)
+            .join(
+                District,
+                JOIN.INNER,
+                on=(NZGDRecord.district_id == District.district_id),
+            )
+            .where(District.name == district)
+        )
+    if city is not None:
+        query = (
+            query.switch(NZGDRecord)
+            .join(City, JOIN.INNER, on=(NZGDRecord.city_id == City.city_id))
+            .where(City.name == city)
+        )
+    if suburb is not None:
+        query = (
+            query.switch(NZGDRecord)
+            .join(Suburb, JOIN.INNER, on=(NZGDRecord.suburb_id == Suburb.suburb_id))
+            .where(Suburb.name == suburb)
+        )
+    # Apply filter for maximum measurement depth
+    if max_measurement_depth or min_measurement_depth:
+        query = (
+            query.switch(SPTReport)
+            .join(SPTMeasurements, JOIN.INNER)
+            .group_by(SPTReport.borehole_id)
+        )
+        if max_measurement_depth:
+            query = query.having(fn.MAX(SPTMeasurements.depth) <= max_measurement_depth)
+        if min_measurement_depth:
+            query = query.having(fn.MAX(SPTMeasurements.depth) >= min_measurement_depth)
+
+    # Execute query and return results
+    return iter(query)
 
 
 def initialize_db():
