@@ -95,12 +95,12 @@ def get_xls_xlsx_iterable(
 
     for sheet_name in sheet_names:
         try:
-            sheet_as_df = pd.read_excel(
+            sheet_as_df = pd.read_excel(  # type: ignore
                 file_path,
                 sheet_name=sheet_name,
                 header=None,
                 parse_dates=False,
-                engine=found_engine,
+                engine=found_engine,  # type: ignore
             )
             iterable_per_sheet.append(
                 data_structures.SearchableSheet(
@@ -621,11 +621,7 @@ if __name__ == "__main__":
     output_dir = constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
     output_dir.mkdir(exist_ok=True, parents=True)
 
-    cpt_ids = sorted(nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist())
-
-    cpt_ids = cpt_ids[0:1]
-
-    # nzgd_id_list = natsorted([int(cpt_id.name.split("_")[1]) for cpt_id in cpt_list])
+    nzgd_ids = sorted(nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist())
 
     results_with_none = []
     num_workers = 8
@@ -633,8 +629,8 @@ if __name__ == "__main__":
         results_with_none.extend(
             list(
                 tqdm(
-                    pool.imap(do_search, cpt_ids),
-                    total=len(cpt_ids),
+                    pool.imap(do_search, nzgd_ids),
+                    total=len(nzgd_ids),
                 ),
             ),
         )
@@ -675,7 +671,7 @@ if __name__ == "__main__":
 
     results_df.to_csv(
         constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
-        / "possible_values_for_cpt_supplemental_values.csv",
+        / "all_potential_cpt_supplemental_values.csv",
         index=False,
     )
 print()

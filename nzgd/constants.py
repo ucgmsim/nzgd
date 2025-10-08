@@ -109,11 +109,12 @@ class QuantityToExtract(enum.StrEnum):
 
     Attributes
     ----------
-    ground_water_level : enum.auto()
-        Represents numeric cells.
-    tip_net_area_ratio : enum.auto()
-        Represents text cells.
-
+    ground_water_level : enum.StrEnum
+        StrEnum representing ground water level.
+    tip_net_area_ratio : enum.StrEnum
+        StrEnum representing tip net area ratio.
+    predrill_depth : enum.StrEnum
+        StrEnum representing predrill depth.
     """
 
     ground_water_level = "ground_water_level"
@@ -286,11 +287,11 @@ NUMERICAL_VALUES_REGEX = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
 MAX_ALLOWED_GWL = 1000
 MIN_ALLOWED_GWL = 0
 
-MAX_ALLOWED_PREDRILLED_DEPTH = 50
-MIN_ALLOWED_PREDRILLED_DEPTH = 0
+MAX_ALLOWED_PREDRILL_DEPTH = 50
+MIN_ALLOWED_PREDRILL_DEPTH = 0
 
-MAX_ALLOWED_TNAR = 1.0
-MIN_ALLOWED_TNAR = 0.2
+MAX_ALLOWED_TIP_NET_AREA_RATIO = 1.0
+MIN_ALLOWED_TIP_NET_AREA_RATIO = 0.2
 
 gwl__not_measured_terms = [
     "no",
@@ -412,11 +413,6 @@ term_dict = {
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
         "assuming_cell_is_a_field_name_in_need_of_a_value": search_gwl__incl_not_measured,
     },
-    "alpha factor": {
-        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
-        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
-    },
     "area ratio": {
         "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
@@ -461,11 +457,6 @@ term_dict = {
         "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
-    },
-    "waterlevel": {
-        "assuming_cell_is_standalone": search_gwl__incl_not_measured,
-        "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-        "assuming_cell_is_a_field_name_in_need_of_a_value": search_gwl__incl_not_measured,
     },
     "predrill": {
         "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
