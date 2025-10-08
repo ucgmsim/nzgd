@@ -1,14 +1,8 @@
-"""Script to load NZGD data using chunked batch processing.
-
-This script implements a chunked batch processing approach to avoid SQLite
-concurrency issues. It processes records in batches using multiprocessing
-for data extraction, then writes each batch to the database sequentially.
-"""
+"""Script to extract CPT data arrays from NZGD source files."""
 
 import multiprocessing as mp
 import os
 
-import natsort
 import pandas as pd
 from tqdm import tqdm
 
@@ -16,31 +10,16 @@ from nzgd import constants
 from nzgd.extract.cpt import workflow
 
 if __name__ == "__main__":
-    # Collect all records to extract
-    records_to_extract = []
-
-    for investigation_type in constants.INVESTIGATION_TYPES:
-        nzgd_source_data_dir = constants.NZGD_SOURCE_DATA_DIR / investigation_type
-        records_to_extract.extend(
-            natsort.natsorted(list(nzgd_source_data_dir.glob("*"))),
-        )
-
-    # A small number of records have been removed from the NZGD after their
-    # source files were downloaded.  These records were likely removed for a reason
-    # such data quality or permission issues, so they are removed from the
-    # list to extract.
-
-    records_currently_in_nzgd = set(
-        pd.read_csv(str(constants.INDEX_FILE_PATH))["nzgd_id"].values
+    nzgd_index_df = pd.read_csv(str(constants.INDEX_FILE_PATH))
+    cpt_nzgd_ids = set(
+        nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist()
     )
-    records_that_have_been_removed = set(records_to_extract) - records_currently_in_nzgd
 
-    if len(records_that_have_been_removed) > 0:
-        records_to_extract = [
-            record_dir
-            for record_dir in records_to_extract
-            if record_dir.name not in records_that_have_been_removed
-        ]
+    downloaded_nzgd_paths = list(constants.NZGD_SOURCE_DATA_DIR.glob("*"))
+
+    cpt_paths = [
+        path for path in downloaded_nzgd_paths if int(path.name) in cpt_nzgd_ids
+    ]
 
     NUM_WORKERS = os.cpu_count()
     results = []
@@ -49,8 +28,8 @@ if __name__ == "__main__":
         results.extend(
             list(
                 tqdm(
-                    pool.imap(workflow.process_one_record, records_to_extract),
-                    total=len(records_to_extract),
+                    pool.imap(workflow.process_one_record, cpt_paths),
+                    total=len(cpt_paths),
                 ),
             ),
         )
