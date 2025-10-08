@@ -4,7 +4,6 @@ from pathlib import Path
 
 import natsort
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
 
 from nzgd import constants
@@ -12,7 +11,6 @@ from nzgd.db import retrieve
 
 vs_calc_path = Path("/home/arr65/src/vs30/VsViewer")
 sys.path.append(str(vs_calc_path))
-
 
 import vs_calc
 
@@ -62,15 +60,6 @@ assumed_borehole_diameter = 150
 borehole_ids = get_unique_borehole_ids(
     constants.OUTPUT_DB_PATH,
 )
-
-conn = sqlite3.connect(constants.OUTPUT_DB_PATH)
-spt_corr_df = pd.read_sql("SELECT id, value FROM SPTToVsCorrelation", conn)
-spt_corr_map = dict(zip(spt_corr_df["value"], spt_corr_df["id"]))
-vs30_corr_df = pd.read_sql("SELECT id, value FROM VsToVs30Correlation", conn)
-vs30_corr_map = dict(zip(vs30_corr_df["value"], vs30_corr_df["id"]))
-hammer_df = pd.read_sql("SELECT id, value FROM SPTToVs30HammerType", conn)
-hammer_map = dict(zip(hammer_df["value"], hammer_df["id"]))
-conn.close()
 
 spt_vs30_data = []
 
@@ -160,10 +149,10 @@ for borehole_id in borehole_ids:
                     spt_vs30_data.append(
                         (
                             borehole_id,
-                            spt_corr_map[spt_vs_correlation],
-                            vs30_corr_map[vs30_correlation],
+                            constants.SPT_TO_VS_CORRELATION_TO_ID[spt_vs_correlation],
+                            constants.VS_TO_VS30_CORRELATION_TO_ID[vs30_correlation],
                             assumed_borehole_diameter,
-                            hammer_map[hammer_type.name],
+                            constants.HAMMER_TYPE_TO_ID[hammer_type.name],
                             int(used_efficiency),
                             int(used_soil_info),
                             vs30,
