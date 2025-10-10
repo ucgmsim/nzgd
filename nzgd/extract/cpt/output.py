@@ -110,29 +110,22 @@ def write_extracted_data(
             :,
             "failed_extraction_index",
         ] = failed_extraction_index
-
-    extracted_data_per_record_output_path = (
-        constants.OUTPUT_DIRECTORY / "extracted_data_per_record"
-    )
-    extraction_failures_per_record_output_path = (
-        constants.OUTPUT_DIRECTORY / "extraction_failures_per_record"
-    )
-
-    extracted_data_per_record_output_path.mkdir(exist_ok=True, parents=True)
-    extraction_failures_per_record_output_path.mkdir(exist_ok=True, parents=True)
-
+    
+    constants.CPT_TRACE_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+    constants.FAILED_CPT_TRACE_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+    
     # If there are any dataframes of extracted data or failed extractions,
     # save them to parquet files
     if len(successful_extraction_dfs) > 0:
         all_extracted_data = pd.concat(successful_extraction_dfs)
         all_extracted_data.to_parquet(
-            extracted_data_per_record_output_path
-            / f"{first_valid_path.parent.name.split('_')[1]}.parquet",
+            constants.CPT_TRACE_OUTPUT_DIR
+            / f"{first_valid_path.parent.name}.parquet",
         )
 
     if len(failed_extraction_dfs) > 0:
         all_failed_extractions = pd.concat(failed_extraction_dfs)
         all_failed_extractions.to_parquet(
-            extraction_failures_per_record_output_path
-            / f"{first_valid_path.parent.name.split('_')[1]}.parquet",
+            constants.FAILED_CPT_TRACE_OUTPUT_DIR
+            / f"{first_valid_path.parent.name}.parquet",
         )
