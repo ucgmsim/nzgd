@@ -27,7 +27,6 @@ FAILED_CPT_TRACE_OUTPUT_DIR = Path(CONFIG["base_output_dir"]) / Path(
     CONFIG["subdirectories"]["failed_cpt_trace"]
 )
 
-
 SUPPLEMENTAL_VALUES_OUTPUT_DIR = Path(CONFIG["base_output_dir"]) / Path(
     CONFIG["subdirectories"]["supplemental_values"]
 )
@@ -36,6 +35,10 @@ ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME = CONFIG[
     "all_potential_cpt_supplemental_values_filename"
 ]
 CPT_SUPPLEMENTAL_VALUES_FILENAME = CONFIG["cpt_supplemental_values_filename"]
+
+CPT_IDS_AND_SUPPLEMENTAL_VALUES_FILENAME = CONFIG[
+    "cpt_id_and_supplemental_values_filename"
+]
 
 NZGD_SOURCE_DATA_DIR = Path(
     CONFIG["nzgd_source_data_dir"],

@@ -594,10 +594,10 @@ for nzgd_id in tqdm(unique_nzgd_id):
 # Prepare data for DataFrame
 df_data = []
 for key, values in extracted_values_dict.items():
-    nzgd_id, filename, sheet_name = key
+    nzgd_id, file_name, sheet_name = key
     row_data = {
         "nzgd_id": nzgd_id,
-        "filename": filename,
+        "file_name": filename,
         "sheet_name": sheet_name,
         "termination_reason": values.termination_reason,
         "ground_water_level": values.ground_water_level,
@@ -611,6 +611,7 @@ for key, values in extracted_values_dict.items():
 extracted_df = pd.DataFrame(df_data)
 
 extracted_df.to_csv(
-    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR / constants.CPT_SUPPLEMENTAL_VALUES_FILENAME,
+    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
+    / constants.CPT_SUPPLEMENTAL_VALUES_FILENAME,
     index=False,
 )
