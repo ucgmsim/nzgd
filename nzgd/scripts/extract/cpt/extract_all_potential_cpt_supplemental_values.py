@@ -671,7 +671,6 @@ if __name__ == "__main__":
 
     results_df.to_csv(
         constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
-        / "all_potential_cpt_supplemental_values.csv",
+        / constants.ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME,
         index=False,
     )
-print()

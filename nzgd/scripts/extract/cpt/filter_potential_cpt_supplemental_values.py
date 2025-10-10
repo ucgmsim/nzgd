@@ -491,7 +491,7 @@ quantity_to_search_term = {
 
 all_options_df = pd.read_csv(
     constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
-    / "all_potential_cpt_supplemental_values.csv",
+    / constants.ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME,
 )
 
 # Create reverse mapping from search term to quantity description
@@ -581,7 +581,6 @@ for nzgd_id in tqdm(unique_nzgd_id):
                     )
 
                 if quantity == "predrill_depth":
-                    print("Extracting predrill_depth")
                     extracted_values_from_sheet_filename_id = (
                         extract_numerical_quantity(
                             extracted_values_from_sheet_filename_id,
@@ -612,6 +611,6 @@ for key, values in extracted_values_dict.items():
 extracted_df = pd.DataFrame(df_data)
 
 extracted_df.to_csv(
-    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR / "cpt_supplemental_values.csv",
+    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR / constants.CPT_SUPPLEMENTAL_VALUES_FILENAME,
     index=False,
 )
