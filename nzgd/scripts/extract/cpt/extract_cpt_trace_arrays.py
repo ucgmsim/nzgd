@@ -4,11 +4,11 @@ import multiprocessing as mp
 import os
 
 import pandas as pd
+from natsort import natsorted
 from tqdm import tqdm
 
 from nzgd import constants
 from nzgd.extract.cpt import workflow
-from natsort import natsorted
 
 if __name__ == "__main__":
     nzgd_index_df = pd.read_csv(str(constants.INDEX_FILE_PATH))

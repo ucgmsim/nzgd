@@ -110,17 +110,16 @@ def write_extracted_data(
             :,
             "failed_extraction_index",
         ] = failed_extraction_index
-    
+
     constants.CPT_TRACE_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
     constants.FAILED_CPT_TRACE_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
-    
+
     # If there are any dataframes of extracted data or failed extractions,
     # save them to parquet files
     if len(successful_extraction_dfs) > 0:
         all_extracted_data = pd.concat(successful_extraction_dfs)
         all_extracted_data.to_parquet(
-            constants.CPT_TRACE_OUTPUT_DIR
-            / f"{first_valid_path.parent.name}.parquet",
+            constants.CPT_TRACE_OUTPUT_DIR / f"{first_valid_path.parent.name}.parquet",
         )
 
     if len(failed_extraction_dfs) > 0:
