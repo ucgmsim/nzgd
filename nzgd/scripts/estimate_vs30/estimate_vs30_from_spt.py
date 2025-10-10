@@ -1,18 +1,13 @@
 import sqlite3
-import sys
 from pathlib import Path
 
 import natsort
 import numpy as np
+import vs_calc
 from tqdm import tqdm
 
 from nzgd import constants
 from nzgd.db import retrieve
-
-vs_calc_path = Path("/home/arr65/src/vs30/VsViewer")
-sys.path.append(str(vs_calc_path))
-
-import vs_calc
 
 
 def get_unique_borehole_ids(db_path: Path) -> list[int]:
