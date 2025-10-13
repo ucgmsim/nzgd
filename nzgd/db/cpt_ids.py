@@ -76,7 +76,16 @@ def extracted_cpt_trace_summary():
     return extracted_data_summary_df
 
 
-if __name__ == "__main__":
+def assign():
+    """Assign CPT IDs to extracted CPT data and supplemental values.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with assigned CPT IDs and merged supplemental values.
+    """
+
+    print("Assigning CPT IDs Part 1 of 2: Identifying unique CPT trace extractions...")
     extracted_cpt_trace_summary_df = extracted_cpt_trace_summary()
     if not extracted_cpt_trace_summary_df.empty:
         order = index_natsorted(extracted_cpt_trace_summary_df["nzgd_id"].astype(str))
@@ -100,8 +109,6 @@ if __name__ == "__main__":
         constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
         / constants.CPT_SUPPLEMENTAL_VALUES_FILENAME,
     )
-
-    print(extracted_supplemental_values_df)
 
     extracted_supplemental_values_df.loc[:, "nzgd_id_AND_filename_AND_sheetname"] = (
         extracted_supplemental_values_df["nzgd_id"].astype(str)
@@ -153,6 +160,9 @@ if __name__ == "__main__":
 
     checked_rows = []
 
+    print(
+        "Assigning CPT IDs Part 2 of 2: Identifying unique supplemental value extractions..."
+    )
     for nzgd_id in tqdm(nzgd_ids_to_check_for_duplicates):
         extracted_subset_df = extracted_single_values_to_check[
             extracted_single_values_to_check["nzgd_id_extracted"] == nzgd_id
@@ -209,14 +219,11 @@ if __name__ == "__main__":
             "ground_water_level",
             "gwl_method",
             "tip_net_area_ratio",
+            "predrill_depth",
             "nzgd_id_AND_filename_AND_sheetname",
             "nzgd_id_extracted",
             "nzgd_id_single_values",
         ]
     ]
 
-    deduplicated_single_values_df.to_csv(
-        constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
-        / constants.CPT_IDS_AND_SUPPLEMENTAL_VALUES_FILENAME,
-        index=False,
-    )
+    return deduplicated_single_values_df

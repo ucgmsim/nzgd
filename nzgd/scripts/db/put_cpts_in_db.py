@@ -8,12 +8,13 @@ import pandas as pd
 from tqdm import tqdm
 
 from nzgd import constants
+from nzgd.db import cpt_ids
 
 
 def serialize_cpt_reports(
     extracted_cpt_dir: Path,
     cpt_id_df: pd.DataFrame,
-    model_gwl_df: pd.DataFrame,
+    nzgd_index_with_metadata_from_coordinates: pd.DataFrame,
     conn: sqlite3.Connection,
 ):
     """Serialize only CPT data to the SQLite database.
@@ -56,9 +57,10 @@ def serialize_cpt_reports(
             ]
 
         # Get the Westerhoff 2018 model GWL for this nzgd_id
-        model_gwl = model_gwl_df[model_gwl_df["nzgd_id"] == cpt_id_df_row["nzgd_id"]][
-            "model_gwl_westerhoff_2018"
-        ].iloc[0]
+        model_gwl = nzgd_index_with_metadata_from_coordinates[
+            nzgd_index_with_metadata_from_coordinates["nzgd_id"]
+            == cpt_id_df_row["nzgd_id"]
+        ]["model_gwl_westerhoff_2018"].iloc[0]
 
         _, source_file_name, source_sheet_name = cpt_id_df_row[
             "nzgd_id_AND_filename_AND_sheetname"
@@ -126,10 +128,10 @@ def serialize_cpt_reports(
             """
             INSERT OR REPLACE INTO cptreport (
                 cpt_id, nzgd_id, max_depth, min_depth, extracted_gwl, gwl_method_id, gwl_residual,
-                tip_net_area_ratio, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
+                tip_net_area_ratio, predrill_depth, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
                 did_explicit_unit_conversion, did_inferred_unit_conversion, source_file
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cpt_id_df_row["cpt_id"],
@@ -140,6 +142,7 @@ def serialize_cpt_reports(
                 gwl_method_id,
                 cpt_id_df_row["ground_water_level"] - model_gwl,
                 cpt_id_df_row["tip_net_area_ratio"],
+                cpt_id_df_row["predrill_depth"],
                 termination_reason_id,
                 has_cpt_data,
                 cpt_data_duplicate_of_cpt_id,
@@ -214,38 +217,39 @@ def serialize_cpt_data_arrays(
 
 
 if __name__ == "__main__":
-    cpt_id_and_single_values_df = pd.read_csv(
-        "/home/arr65/src/nzgd_data_extraction/nzgd_data_extraction/nzgd_sqlite/cpt_ids_multi_single_values.csv",
-    )
-    # cpt_id_and_single_values_df = cpt_id_and_single_values_df.iloc[0:10]
+    cpt_id_and_single_values_df = cpt_ids.assign()
 
-    model_gwl_df = pd.read_csv(
-        "/home/arr65/src/nzgd_data_extraction/nzgd_data_extraction/resources/nzgd_metadata_from_coordinates_22_august_2025.csv",
+    nzgd_index_with_metadata_from_coordinates = pd.read_csv(
+        constants.INDEX_FILE_PATH,
     )
 
     # The metadata (including lat, lon) has been lost for nzgd_id = 187732.
     # Unknown how this happened. Perhaps NZGD removed it after the files were
     # downloaded. Only keep records for which we have metadata.
     cpt_id_and_single_values_df = cpt_id_and_single_values_df[
-        cpt_id_and_single_values_df["nzgd_id"].isin(model_gwl_df["nzgd_id"])
+        cpt_id_and_single_values_df["nzgd_id"].isin(
+            nzgd_index_with_metadata_from_coordinates["nzgd_id"]
+        )
     ]
 
     extracted_cpt_dir = Path(
-        "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/extracted_data_per_record",
+        constants.CPT_TRACE_OUTPUT_DIR,
     )
 
     output_path = Path(
         constants.OUTPUT_DB_PATH,
     )
 
+    print("Writing CPT supplemental values to database...")
     with sqlite3.connect(output_path) as db:
         serialize_cpt_reports(
             extracted_cpt_dir,
             cpt_id_and_single_values_df,
-            model_gwl_df,
+            nzgd_index_with_metadata_from_coordinates,
             db,
         )
 
+    print("Writing CPT trace data arrays to database...")
     with sqlite3.connect(output_path) as db:
         serialize_cpt_data_arrays(
             extracted_cpt_dir,
