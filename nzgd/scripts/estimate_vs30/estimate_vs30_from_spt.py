@@ -1,11 +1,15 @@
+"""
+Estimate Vs30 from the SPT data in the database and store results back in the database.
+"""
+
 import sqlite3
 from pathlib import Path
 
 import natsort
 import numpy as np
-import vs_calc
 from tqdm import tqdm
 
+import vs_calc
 from nzgd import constants
 from nzgd.db import retrieve
 
@@ -105,9 +109,9 @@ for borehole_id in borehole_ids:
         for vs30_correlation in vs30_correlations:
             for hammer_type in hammer_types:
                 spt = vs_calc.SPT(
-                    name=spt_search_result.borehole_id,
-                    depth=measurements_df["depth"].values,
-                    n=measurements_df["n_value"].values,
+                    name=str(spt_search_result.borehole_id),
+                    depth=measurements_df["depth"].to_numpy(),
+                    n=measurements_df["n_value"].to_numpy(),
                     hammer_type=hammer_type,
                     borehole_diameter=assumed_borehole_diameter,
                 )
