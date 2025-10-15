@@ -164,6 +164,7 @@ progress_bar.close()
 if spt_vs30_data:
     conn = sqlite3.connect(constants.OUTPUT_DB_PATH)
     cursor = conn.cursor()
+    # executemany automatically assigns the vs30_id primary key so it is not specified
     cursor.executemany(
         """
         INSERT INTO sptvs30estimates (borehole_id, spt_to_vs_correlation_id, vs_to_vs30_correlation_id, assumed_borehole_diameter, assumed_hammer_type_id, estimate_used_extracted_efficiency, estimate_used_extracted_layer_soil_types, vs30, vs30_stddev)
