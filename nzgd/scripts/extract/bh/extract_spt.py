@@ -36,5 +36,5 @@ for nzgd_id in nzgd_index_df["nzgd_id"]:
             ags_files.append(f)
 
 
-miner.mine_borehole_log(pdf_files, constants.OUTPUT_DB_PATH)
-ags_miner.mine_borehole_log(ags_files, constants.OUTPUT_DB_PATH)
+miner.mine_borehole_log(pdf_files, constants.TEMP_SPT_PDF_DB_PATH)
+ags_miner.mine_borehole_log(ags_files, constants.TEMP_SPT_AGS_DB_PATH)

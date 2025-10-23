@@ -1,12 +1,64 @@
 """Create an empty SQLite database and fill support tables."""
 
 import sqlite3
+from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
 
 from nzgd import constants
 from nzgd.db import orm
+
+
+def initialize_database_at_path(db_path: Path):
+    """Initialize a database at the specified path with all required tables.
+    
+    Parameters
+    ----------
+    db_path : Path
+        The path where the database should be created.
+    """
+    # Create the database file if it doesn't exist
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create a temporary database connection for initialization
+    temp_db = sqlite3.connect(str(db_path))
+    
+    # Create all tables using the ORM models
+    # We need to temporarily change the database path in the ORM
+    original_db_path = orm.db.database
+    orm.db.init(str(db_path))
+    
+    try:
+        with orm.db:
+            orm.db.create_tables([
+                orm.Type,
+                orm.Region,
+                orm.District,
+                orm.City,
+                orm.Suburb,
+                orm.CPTToVsCorrelation,
+                orm.SPTToVsCorrelation,
+                orm.VsToVs30Correlation,
+                orm.SPTToVs30HammerType,
+                orm.TerminationReason,
+                orm.CPTGroundWaterLevelMethod,
+                orm.SoilTypes,
+                orm.NZGDRecord,
+                orm.SPTReport,
+                orm.SoilMeasurements,
+                orm.SoilMeasurementSoilType,
+                orm.SPTMeasurements,
+                orm.CPTReport,
+                orm.CPTMeasurements,
+                orm.CPTVs30Estimates,
+                orm.SPTVs30Estimates,
+            ])
+    finally:
+        # Restore the original database path
+        orm.db.init(original_db_path)
+    
+    temp_db.close()
 
 
 def serialize_record_metadata(metadata_df: pd.DataFrame, conn: sqlite3.Connection):
@@ -16,7 +68,7 @@ def serialize_record_metadata(metadata_df: pd.DataFrame, conn: sqlite3.Connectio
     location_categories = ["region", "district", "city", "suburb"]
     location_id_maps = {}
     for category in location_categories:
-        cursor.execute(f"SELECT {category}_id, name FROM {category}")
+        cursor.execute(f"SELECT id, value FROM {category}")
         location_id_maps[category] = {name: id_ for id_, name in cursor.fetchall()}
 
     # Map string columns in metadata_df to their corresponding ids
@@ -28,24 +80,25 @@ def serialize_record_metadata(metadata_df: pd.DataFrame, conn: sqlite3.Connectio
     for _, row in tqdm(metadata_df.iterrows(), total=metadata_df.shape[0]):
         cursor.execute(
             """
-            INSERT OR REPLACE INTO nzgdrecord (nzgd_id, type_prefix, original_investigation_name, investigation_date, published_date, latitude, longitude, region_id, district_id, city_id, suburb_id, model_vs30_foster_2019, model_vs30_stddev_foster_2019, model_gwl_westerhoff_2018)
+            INSERT OR REPLACE INTO nzgdrecord (nzgd_id, type_id, latitude, longitude, model_vs30_foster_2019, model_vs30_stddev_foster_2019, model_gwl_westerhoff_2018, original_investigation_name, investigation_date, published_date,  region_id, district_id, city_id, suburb_id)
             VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 int(row["nzgd_id"]),
                 row["Type"],
+                row["Latitude"],
+                row["Longitude"],
+                row["model_vs30_foster_2019"],
+                row["model_vs30_std_foster_2019"],
+                row["model_gwl_westerhoff_2018"],
                 row["InvestigationId"],
                 row["CreatedOn"],
                 row["LastModifiedOn"],
-                row["Latitude"],
-                row["Longitude"],
                 row["region_id_db"],
                 row["district_id_db"],
                 row["city_id_db"],
                 row["suburb_id_db"],
-                row["model_vs30_foster_2019"],
-                row["model_vs30_std_foster_2019"],
-                row["model_gwl_westerhoff_2018"],
+
             ),
         )
 
@@ -299,24 +352,23 @@ def serialize_location_name_tables(metadata_df: pd.DataFrame, conn: sqlite3.Conn
             )
 
 
-if __name__ == "__main__":
-    metadata_from_location_coordinates = pd.read_csv(
-        constants.INDEX_FILE_PATH,
-    )
-
-    orm.initialize_db()
-
-    with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
+def populate_database(db_path: Path, metadata_df: pd.DataFrame):
+    """Populate a database with support tables and metadata.
+    
+    Parameters
+    ----------
+    db_path : Path
+        The path to the database to populate.
+    metadata_df : pd.DataFrame
+        The metadata DataFrame containing location information.
+    """
+    print(f"Populating database at {db_path}")
+    
+    with sqlite3.connect(str(db_path)) as db:
         # needs to be in the db for Jake's SPT mining code to work
-        serialize_spt_soil_type_table(
-            db,
-        )
-        serialize_cpt_termination_reason_table(
-            db,
-        )
-        serialize_ground_water_level_method_table(
-            db,
-        )
+        serialize_spt_soil_type_table(db)
+        serialize_cpt_termination_reason_table(db)
+        serialize_ground_water_level_method_table(db)
 
         serialize_correlation_tables(db)
 
@@ -324,4 +376,38 @@ if __name__ == "__main__":
 
         serialize_investigation_type_table(db)
 
-        serialize_location_name_tables(metadata_from_location_coordinates, db)
+        serialize_location_name_tables(metadata_df, db)
+        
+        # Only populate record metadata for the main database
+        if db_path == constants.OUTPUT_DB_PATH:
+            serialize_record_metadata(metadata_df, db)
+
+
+if __name__ == "__main__":
+    metadata_from_location_coordinates = pd.read_csv(
+        constants.INDEX_FILE_PATH,
+    )
+
+    # List of all database paths to create
+    database_paths = [
+        constants.OUTPUT_DB_PATH,
+        constants.TEMP_SPT_PDF_DB_PATH,
+        constants.TEMP_SPT_AGS_DB_PATH,
+    ]
+
+    database_paths = [
+        constants.OUTPUT_DB_PATH,
+        constants.TEMP_SPT_PDF_DB_PATH,
+        constants.TEMP_SPT_AGS_DB_PATH,
+    ]
+    
+    print("Creating and initializing databases...")
+    for db_path in database_paths:
+        print(f"Creating database at {db_path}")
+        initialize_database_at_path(db_path)
+    
+    print("Populating databases with support tables...")
+    for db_path in database_paths:
+        populate_database(db_path, metadata_from_location_coordinates)
+    
+    print("Database creation and population completed successfully!")
