@@ -60,6 +60,7 @@ import typer
 from python_ags4 import AGS4
 
 from nzgd.extract.bh.data_structures import SPTReport
+from nzgd.constants import SOIL_TYPE_TO_ID
 
 # Initialize Typer app
 app = typer.Typer()
@@ -82,7 +83,7 @@ def extract_soil_report(description: str) -> set[str]:
         A set of identified soil types from the input.
 
     """
-    soil_types = {"SAND", "SILT", "CLAY", "GRAVEL", "COBBLES", "BOULDERS"}
+    soil_types = set(SOIL_TYPE_TO_ID.keys())
     return soil_types & {word.strip(",.;") for word in description.split()}
 
 
@@ -124,54 +125,64 @@ def process_borehole(report: Path) -> SPTReport:
     SPTReport
         The extracted SPT report.
 
-    Raises
-    ------
-    ValueError
-        If depth column or SPT values are missing.
-
     """
     tables, headings = AGS4.AGS4_to_dataframe(report)
-    spt_table = (
-        tables["ISPT"][["ISPT_TOP", "ISPT_MAIN"]]
-        .iloc[2:]
-        .rename(columns={"ISPT_TOP": "Depth", "ISPT_MAIN": "N"})
-    )
-    if spt_table["N"].eq("").all():
-        raise ValueError("SPT N values are empty strings")
+    
+    # Initialize SPT table with empty DataFrame
+    spt_table = pd.DataFrame(columns=["Depth", "N"])
+    
+    # Try to extract SPT data if ISPT table exists
+    if "ISPT" in tables:
+        spt_table = (
+            tables["ISPT"][["ISPT_TOP", "ISPT_MAIN"]]
+            .iloc[2:]
+            .rename(columns={"ISPT_TOP": "Depth", "ISPT_MAIN": "N"})
+        )
+        # If all N values are empty, create empty DataFrame with NaN values
+        if spt_table["N"].eq("").all():
+            spt_table = pd.DataFrame(columns=["Depth", "N"])
+            warnings.warn(f"No SPT N values found in {report}, creating empty SPT measurements")
 
-    geology_table = tables.get("GEOL")
-    if geology_table is not None:
+    # Initialize geology table
+    geology_table = pd.DataFrame(columns=["top_depth", "soil_types"])
+    
+    # Try to extract geology data if GEOL table exists
+    if "GEOL" in tables and tables.get("GEOL") is not None:
         geology_table = (
-            geology_table[["GEOL_TOP", "GEOL_DESC"]]
+            tables["GEOL"][["GEOL_TOP", "GEOL_DESC"]]
             .iloc[2:]
             .rename(columns={"GEOL_TOP": "top_depth", "GEOL_DESC": "soil_types"})
         )
         geology_table["soil_types"] = geology_table["soil_types"].apply(
             extract_soil_report,
         )
+
+    # Try to extract efficiency from report text
+    efficiency = None
+    try:
         report_data = report.read_bytes()
         encoding = chardet.detect(report_data)
         report_text = report_data.decode(encoding["encoding"])
 
-        efficiency = None
         if efficiencies := list(re.finditer(RATIO_RE, report_text)):
             label = re.search(LABEL_RE, report_text)
-            label_start = label.start(0)
-            label_end = label.end(0)
-            efficiency = float(
-                min(
-                    efficiencies,
-                    # Hausdorff distance between label spans to find the
-                    # one that is most likely to be the hammer energy
-                    # efficiency ratio.
-                    key=lambda m: max(
-                        abs(m.start(0) - label_start),
-                        abs(m.end(0) - label_end),
-                    ),
-                ).group(1),
-            )
-    else:
-        geology_table = pd.DataFrame(columns=["top_depth", "soil_types"])
+            if label:
+                label_start = label.start(0)
+                label_end = label.end(0)
+                efficiency = float(
+                    min(
+                        efficiencies,
+                        # Hausdorff distance between label spans to find the
+                        # one that is most likely to be the hammer energy
+                        # efficiency ratio.
+                        key=lambda m: max(
+                            abs(m.start(0) - label_start),
+                            abs(m.end(0) - label_end),
+                        ),
+                    ).group(1),
+                )
+    except Exception as e:
+        warnings.warn(f"Could not extract efficiency from {report}: {e}")
 
     return SPTReport(
         borehole_id=borehole_id(report),
@@ -243,32 +254,42 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
 
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
     for report in reports:
-        for _, row in report.spt_measurements.iterrows():
-            cursor.execute(
-                """
-                INSERT INTO sptmeasurements (borehole_id, depth, n)
-                VALUES (?, ?, ?)
-            """,
-                (report.borehole_id, row["Depth"], row["N"]),
-            )
-        for _, row in report.soil_measurements.iterrows():
-            if not row["soil_types"]:
-                continue
-            cursor.execute(
-                """
-                               INSERT INTO soilmeasurements (report_id, top_depth)
-                               VALUES (?, ?)
-                           """,
-                (report.borehole_id, row["top_depth"]),
-            )
-            measurement_id = cursor.lastrowid
-            for soil_type in row["soil_types"]:
+        # Only insert SPT measurements if the DataFrame is not empty
+        if not report.spt_measurements.empty:
+            for _, row in report.spt_measurements.iterrows():
+                # Handle NaN/None values by converting to None for SQLite
+                depth = row["Depth"] if pd.notna(row["Depth"]) else None
+                n_value = row["N"] if pd.notna(row["N"]) and row["N"] != "" else None
                 cursor.execute(
-                    """ INSERT OR IGNORE INTO soilmeasurementsoiltype
-                               VALUES (?, ?)
-                    """,
-                    (measurement_id, soil_type_id_map[soil_type]),
+                    """
+                    INSERT INTO sptmeasurements (borehole_id, depth, n)
+                    VALUES (?, ?, ?)
+                """,
+                    (report.borehole_id, depth, n_value),
                 )
+        # Only process soil measurements if the DataFrame is not empty
+        if not report.soil_measurements.empty:
+            for _, row in report.soil_measurements.iterrows():
+                if not row["soil_types"]:
+                    continue
+                # Handle NaN/None values for top_depth
+                top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
+                cursor.execute(
+                    """
+                                   INSERT INTO soilmeasurements (report_id, top_depth)
+                                   VALUES (?, ?)
+                               """,
+                    (report.borehole_id, top_depth),
+                )
+                measurement_id = cursor.lastrowid
+                for soil_type in row["soil_types"]:
+                    if soil_type in soil_type_id_map:
+                        cursor.execute(
+                            """ INSERT OR IGNORE INTO soilmeasurementsoiltype
+                                       VALUES (?, ?)
+                            """,
+                            (measurement_id, soil_type_id_map[soil_type]),
+                        )
 
 
 @app.command(

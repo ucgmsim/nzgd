@@ -276,10 +276,10 @@ class SPTMeasurements(BaseModel):
     borehole_id = ForeignKeyField(SPTReport, backref="measurements")
     """int: The foreign key referencing the associated SPT report."""
 
-    depth = FloatField()
+    depth = FloatField(null=True)
     """float: The depth at which the measurement was taken."""
 
-    n = IntegerField()
+    n = IntegerField(null=True)
     """int: The N-value of the measurement."""
 
 

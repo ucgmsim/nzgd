@@ -66,11 +66,7 @@ if __name__ == "__main__":
         inplace=True,
     )
 
-    output_path = Path(
-        constants.OUTPUT_DB_PATH,
-    )
-
-    with sqlite3.connect(output_path) as db:
+    with sqlite3.connect(constants.TEMP_SPT_AGS_DB_PATH) as db:
         serialize_spt_gwl_data(
             bh_gwl_df,
             db,

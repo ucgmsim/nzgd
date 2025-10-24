@@ -67,6 +67,7 @@ from pdfminer.pdfpage import PDFPage, PDFTextExtractionNotAllowed
 from pdfminer.pdfparser import PDFParser
 
 from nzgd.extract.bh.data_structures import SPTReport, TextObject
+from nzgd.constants import SOIL_TYPE_TO_ID
 
 # Initialize Typer app
 app = typer.Typer()
@@ -89,7 +90,7 @@ def extract_soil_report(description: str) -> set[str]:
         A set of identified soil types from the input.
 
     """
-    soil_types = {"SAND", "SILT", "CLAY", "GRAVEL", "COBBLES", "BOULDERS"}
+    soil_types = set(SOIL_TYPE_TO_ID.keys())
     return soil_types & {word.strip(",.;") for word in description.split()}
 
 
@@ -494,16 +495,18 @@ def _analyze_text_objects(
                         "N": n,
                     },
                 )
+    # Create SPT DataFrame, handling empty case
     if not spt_values:
-        raise ValueError(f"No SPT values found in {report}")
-
-    df = pd.DataFrame(spt_values)
-    min_depth = df["Depth"].min()
-    max_depth = df["Depth"].max()
-    if min_depth < 0 or max_depth > 70:
-        raise ValueError(
-            f"Invalid depth calculation detected (minimum depth = {min_depth}, max depth = {max_depth}).",
-        )
+        warnings.warn(f"No SPT values found in {report}, creating empty SPT measurements")
+        df = pd.DataFrame(columns=["Depth", "N"])
+    else:
+        df = pd.DataFrame(spt_values)
+        min_depth = df["Depth"].min()
+        max_depth = df["Depth"].max()
+        if min_depth < 0 or max_depth > 70:
+            raise ValueError(
+                f"Invalid depth calculation detected (minimum depth = {min_depth}, max depth = {max_depth}).",
+            )
     soil_measurements = pd.DataFrame(
         {"top_depth": extracted_soil_depths, "soil_types": soil_types},
     )
@@ -567,30 +570,40 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
 
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
     for report in reports:
-        for _, row in report.spt_measurements.iterrows():
-            cursor.execute(
-                """
-                INSERT INTO sptmeasurements (borehole_id, depth, n)
-                VALUES (?, ?, ?)
-            """,
-                (report.borehole_id, row["Depth"], row["N"]),
-            )
-        for _, row in report.soil_measurements.iterrows():
-            cursor.execute(
-                """
-                               INSERT INTO soilmeasurements (report_id, top_depth)
-                               VALUES (?, ?)
-                           """,
-                (report.borehole_id, row["top_depth"]),
-            )
-            measurement_id = cursor.lastrowid
-            for soil_type in row["soil_types"]:
+        # Only insert SPT measurements if the DataFrame is not empty
+        if not report.spt_measurements.empty:
+            for _, row in report.spt_measurements.iterrows():
+                # Handle NaN/None values by converting to None for SQLite
+                depth = row["Depth"] if pd.notna(row["Depth"]) else None
+                n_value = row["N"] if pd.notna(row["N"]) else None
                 cursor.execute(
-                    """ INSERT INTO soilmeasurementsoiltype
-                               VALUES (?, ?)
-                    """,
-                    (measurement_id, soil_type_id_map[soil_type]),
+                    """
+                    INSERT INTO sptmeasurements (borehole_id, depth, n)
+                    VALUES (?, ?, ?)
+                """,
+                    (report.borehole_id, depth, n_value),
                 )
+        # Only process soil measurements if the DataFrame is not empty
+        if not report.soil_measurements.empty:
+            for _, row in report.soil_measurements.iterrows():
+                # Handle NaN/None values for top_depth
+                top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
+                cursor.execute(
+                    """
+                                   INSERT INTO soilmeasurements (report_id, top_depth)
+                                   VALUES (?, ?)
+                               """,
+                    (report.borehole_id, top_depth),
+                )
+                measurement_id = cursor.lastrowid
+                for soil_type in row["soil_types"]:
+                    if soil_type in soil_type_id_map:
+                        cursor.execute(
+                            """ INSERT INTO soilmeasurementsoiltype
+                                       VALUES (?, ?)
+                            """,
+                            (measurement_id, soil_type_id_map[soil_type]),
+                        )
 
 
 @app.command(

@@ -588,12 +588,18 @@ refused_keywords_dict = {
 
 # Values to SQLite ID mappings
 SOIL_TYPE_TO_ID = {
-    "BOULDERS": 1,
-    "CLAY": 2,
-    "COBBLES": 3,
-    "GRAVEL": 4,
-    "SAND": 5,
-    "SILT": 6,
+    "ASH": 1,
+    "ASPHALT": 2,
+    "BASALT": 3,
+    "BOULDERS": 4,
+    "CLAY": 5,
+    "COBBLES": 6,
+    "GRAVEL": 7,
+    "PEAT": 8,
+    "SAND": 9,
+    "SANDSTONE": 10,
+    "SILT": 11,
+    "SILTSTONE": 12,
 }
 
 CPT_TERMINATION_REASON_TO_ID = {
