@@ -117,6 +117,13 @@ for borehole_id in borehole_ids:
                 # Use layers for layered correlations
                 layers = example_layers if "layered" in spt_vs_correlation else None
                 
+                # Use extracted groundwater level if available, otherwise use default
+                groundwater_level = (
+                    spt_search_result.extracted_gwl 
+                    if spt_search_result.extracted_gwl is not None 
+                    else constants.DEFAULT_GROUNDWATER_LEVEL
+                )
+                
                 spt = vs_calc.SPT(
                     name=str(spt_search_result.borehole_id),
                     depth=measurements_df["depth"].to_numpy(),
@@ -124,7 +131,7 @@ for borehole_id in borehole_ids:
                     hammer_type=hammer_type,
                     borehole_diameter=assumed_borehole_diameter,
                     layers=layers,
-                    groundwater_level=2.0,
+                    groundwater_level=groundwater_level,
                 )
 
                 if used_soil_info:

@@ -649,3 +649,6 @@ HAMMER_TYPE_TO_ID = {
     "Safety": 2,
     "Standard": 3,
 }
+
+# Default groundwater level for SPT calculations when extracted_gwl is not available
+DEFAULT_GROUNDWATER_LEVEL = 2.0
