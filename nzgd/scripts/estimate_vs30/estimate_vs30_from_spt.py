@@ -56,6 +56,12 @@ hammer_types = [
 
 assumed_borehole_diameter = 150
 
+# Example layer configuration for layer-based correlations
+example_layers = [
+    {"thickness": 2, "unit_weight": 17, "saturated_unit_weight": 18},
+    {"thickness": 3, "unit_weight": 16, "saturated_unit_weight": 18}
+]
+
 borehole_ids = get_unique_borehole_ids(
     constants.OUTPUT_DB_PATH,
 )
@@ -108,12 +114,17 @@ for borehole_id in borehole_ids:
     for spt_vs_correlation in spt_vs_correlations:
         for vs30_correlation in vs30_correlations:
             for hammer_type in hammer_types:
+                # Use layers for layered correlations
+                layers = example_layers if "layered" in spt_vs_correlation else None
+                
                 spt = vs_calc.SPT(
                     name=str(spt_search_result.borehole_id),
                     depth=measurements_df["depth"].to_numpy(),
                     n=measurements_df["n_value"].to_numpy(),
                     hammer_type=hammer_type,
                     borehole_diameter=assumed_borehole_diameter,
+                    layers=layers,
+                    groundwater_level=2.0,
                 )
 
                 if used_soil_info:

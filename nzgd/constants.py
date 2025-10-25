@@ -629,6 +629,8 @@ CPT_TO_VS_CORRELATION_TO_ID = {
 SPT_TO_VS_CORRELATION_TO_ID = {
     "brandenberg_2010": 1,
     "kwak_2015": 2,
+    "brandenberg_2010_layered": 3,
+    "kwak_2015_layered": 4,
 }
 
 # Correlation mappings for CPT and Vs30 correlations
