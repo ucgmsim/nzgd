@@ -87,36 +87,13 @@ def extract_soil_report(description: str) -> set[str]:
     return soil_types & {word.strip(",.;") for word in description.split()}
 
 
-def borehole_id(report: Path) -> int:
-    """Extract the borehole ID from a report filename.
-
-    Parameters
-    ----------
-    report : Path
-        The path to the borehole report.
-
-    Returns
-    -------
-    int
-        The extracted borehole ID.
-
-    Raises
-    ------
-    ValueError
-        If the report name does not follow the expected format.
-
-    """
-    # Borehole PDF names have format Borehole_<Borehole ID>_(Raw/Rep)01.ags
-    if match := re.search(r"_(\d+)_", report.stem):
-        return int(match.group(1))
-    raise ValueError(f"Report name {report.stem} lacks proper structure")
-
-
-def process_borehole(report: Path) -> SPTReport:
+def process_borehole(borehole_id: int, report: Path) -> SPTReport:
     """Process a borehole report to extract SPT values and soil types.
 
     Parameters
     ----------
+    borehole_id : int
+        The borehole ID.
     report : Path
         The path to the borehole report AGS.
 
@@ -184,9 +161,17 @@ def process_borehole(report: Path) -> SPTReport:
     except Exception as e:
         warnings.warn(f"Could not extract efficiency from {report}: {e}")
 
+    # Check if any meaningful data was extracted
+    has_spt_data = not spt_table.empty and not spt_table["N"].eq("").all()
+    has_soil_data = not geology_table.empty
+    has_efficiency = efficiency is not None
+    
+    if not (has_spt_data or has_soil_data or has_efficiency):
+        raise ValueError(f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found")
+
     return SPTReport(
-        borehole_id=borehole_id(report),
-        nzgd_id=borehole_id(report),
+        borehole_id=borehole_id,
+        nzgd_id=borehole_id,
         efficiency=efficiency,
         extracted_gwl=None,
         source_file=report,
@@ -199,22 +184,23 @@ RATIO_RE = re.compile(r"(\d{1,3}(\.\d+)?)\s*%")
 LABEL_RE = re.compile(r"\b(ratio|efficien(t|cy)|hammer\s+energy)\b", re.IGNORECASE)
 
 
-def process_borehole_no_exceptions(report: Path) -> SPTReport | None:
+def process_borehole_no_exceptions(borehole_file_tuple: tuple[int, Path]) -> SPTReport | None:
     """Process a borehole report while suppressing exceptions.
 
     Parameters
     ----------
-    report : Path
-        The path to the borehole report.
+    borehole_file_tuple : tuple[int, Path]
+        A tuple containing (borehole_id, file_path).
 
     Returns
     -------
-    Optional[pd.DataFrame]
-        A DataFrame with borehole data, or None if an exception occurs.
+    Optional[SPTReport]
+        A SPTReport with borehole data, or None if an exception occurs.
 
     """
+    borehole_id, report = borehole_file_tuple
     try:
-        return process_borehole(report)
+        return process_borehole(borehole_id, report)
     except Exception as e:
         warnings.warn(f"Failed to process {report}: {e}")
         return None
@@ -342,15 +328,15 @@ def mine_individual_borehole(
 
 
 def mine_borehole_log(
-    input_file_paths: list[Path],
+    input_file_tuples: list[tuple[int, Path]],
     output_path: Path,
 ) -> None:
     """Extract and consolidate borehole log data from a directory of reports.
 
     Parameters
     ----------
-    input_file_paths : list[Path]
-        List of paths to the borehole log AGS files.
+    input_file_tuples : list[tuple[int, Path]]
+        List of tuples of borehole ID and path to the borehole log AGS files.
     output_path : Path
         Path to the output SQLite database.
 
@@ -360,8 +346,8 @@ def mine_borehole_log(
         reports = [
             report
             for report in tqdm.tqdm(
-                pool.imap(process_borehole_no_exceptions, input_file_paths),
-                total=len(input_file_paths),
+                pool.imap(process_borehole_no_exceptions, input_file_tuples),
+                total=len(input_file_tuples),
             )
             if report is not None
         ]

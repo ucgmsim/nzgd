@@ -172,39 +172,15 @@ def is_valid_depth_measurement(text: str, max_depth_cutoff: float = 60) -> bool:
     except ValueError:
         return False
 
-
-def borehole_id(report: Path) -> int:
-    """Extract the borehole ID from a report filename.
-
-    Parameters
-    ----------
-    report : Path
-        The path to the borehole report.
-
-    Returns
-    -------
-    int
-        The extracted borehole ID.
-
-    Raises
-    ------
-    ValueError
-        If the report name does not follow the expected format.
-
-    """
-    # Borehole PDF names have format Borehole_<Borehole ID>_(Raw/Rep)01.pdf
-    if match := re.search(r"_(\d+)_", report.stem):
-        return int(match.group(1))
-    raise ValueError(f"Report name {report.stem} lacks proper structure")
-
-
-def process_borehole(report: Path) -> SPTReport:
+def process_borehole(report: Path, borehole_id: int) -> SPTReport:
     """Process a borehole report to extract SPT values and soil types.
 
     Parameters
     ----------
     report : Path
         The path to the borehole report PDF.
+    borehole_id : int
+        The borehole ID to use instead of extracting from filename.
 
     Returns
     -------
@@ -243,7 +219,7 @@ def process_borehole(report: Path) -> SPTReport:
             )
             text_objects.append(page_text_objects)
 
-    return _analyze_text_objects(text_objects, report)
+    return _analyze_text_objects(text_objects, report, borehole_id)
 
 
 def invalid_scale(scale: list[float]) -> bool:
@@ -430,6 +406,7 @@ def get_ratio_near(node: TextObject, page: list[TextObject]) -> float | None:
 def _analyze_text_objects(
     text_objects: list[list[TextObject]],
     report: Path,
+    borehole_id: int,
 ) -> SPTReport:
     """Analyse extracted text objects to extract borehole data.
 
@@ -511,9 +488,17 @@ def _analyze_text_objects(
         {"top_depth": extracted_soil_depths, "soil_types": soil_types},
     )
 
+    # Check if any meaningful data was extracted
+    has_spt_data = not df.empty
+    has_soil_data = not soil_measurements.empty
+    has_efficiency = hammer_efficiency is not None
+    
+    if not (has_spt_data or has_soil_data or has_efficiency):
+        raise ValueError(f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found")
+
     return SPTReport(
-        borehole_id=borehole_id(report),
-        nzgd_id=borehole_id(report),
+        borehole_id=borehole_id,
+        nzgd_id=borehole_id,
         efficiency=hammer_efficiency,
         extracted_gwl=None,
         source_file=report,
@@ -522,22 +507,23 @@ def _analyze_text_objects(
     )
 
 
-def process_borehole_no_exceptions(report: Path) -> SPTReport | None:
+def process_borehole_no_exceptions(borehole_file_tuple: tuple[int, Path]) -> SPTReport | None:
     """Process a borehole report while suppressing exceptions.
 
     Parameters
     ----------
-    report : Path
-        The path to the borehole report.
+    borehole_file_tuple : tuple[int, Path]
+        A tuple containing (borehole_id, file_path).
 
     Returns
     -------
-    Optional[pd.DataFrame]
-        A DataFrame with borehole data, or None if an exception occurs.
+    Optional[SPTReport]
+        A SPTReport with borehole data, or None if an exception occurs.
 
     """
+    borehole_id, report = borehole_file_tuple
     try:
-        return process_borehole(report)
+        return process_borehole(report, borehole_id)
     except Exception as e:
         warnings.warn(f"Failed to data_extraction {report}: {e}")
         return None
@@ -656,15 +642,15 @@ def mine_individual_borehole(
 
 
 def mine_borehole_log(
-    input_file_paths: list[Path],
+    input_file_tuples: list[tuple[int, Path]],
     output_path: Path,
 ) -> None:
     """Extract and consolidate borehole log data from a directory of reports.
 
     Parameters
     ----------
-    input_file_paths : list[Path]
-        List of paths to the borehole log PDF files.
+    input_file_tuples : list[tuple[int, Path]]
+        List of tuples of borehole ID and path to the borehole log PDF files.
     output_path : Path
         Path to save the consolidated output as a Parquet file.
 
@@ -674,8 +660,8 @@ def mine_borehole_log(
         reports = [
             report
             for report in tqdm.tqdm(
-                pool.imap(process_borehole_no_exceptions, input_file_paths),
-                total=len(input_file_paths),
+                pool.imap(process_borehole_no_exceptions, input_file_tuples),
+                total=len(input_file_tuples),
             )
             if report is not None
         ]
