@@ -45,6 +45,89 @@ def get_unique_borehole_ids(db_path: Path) -> list[int]:
     return natsort.natsorted(unique_borehole_ids)
 
 
+def split_layers_at_groundwater(
+    layers: list[dict], groundwater_level: float
+) -> np.ndarray:
+    """
+    Split soil layers at the groundwater level, assigning appropriate unit weights.
+    
+    Layers above the groundwater level use unsaturated unit_weight, while layers
+    below use saturated_unit_weight. If a layer is intersected by the groundwater
+    level, it is split into two sub-layers.
+    
+    Parameters
+    ----------
+    layers : list[dict]
+        List of layer dictionaries, each containing:
+        - 'thickness' (float): Layer thickness in meters
+        - 'unit_weight' (float): Unsaturated unit weight in kN/m³
+        - 'saturated_unit_weight' (float): Saturated unit weight in kN/m³
+    groundwater_level : float
+        Depth to groundwater level from surface in meters.
+        
+    Returns
+    -------
+    np.ndarray
+        Array of shape (n_layers, 2) where each row is [thickness, unit_weight].
+        Layers are ordered from top to bottom.
+        
+    Notes
+    -----
+    Edge cases:
+    - If groundwater_level <= 0: all layers use saturated_unit_weight
+    - If groundwater_level is deeper than all layers: all layers use unit_weight
+    - Zero-thickness layers are preserved (though unusual)
+    
+    Examples
+    --------
+    >>> layers = [
+    ...     {"thickness": 2, "unit_weight": 17, "saturated_unit_weight": 19},
+    ...     {"thickness": 3, "unit_weight": 16, "saturated_unit_weight": 18}
+    ... ]
+    >>> split_layers_at_groundwater(layers, groundwater_level=3.5)
+    array([[2.0, 17.0],   # Layer 1: entirely above GWL
+           [1.5, 16.0],   # Layer 2 upper: above GWL
+           [1.5, 18.0]])  # Layer 2 lower: below GWL
+    """
+    if not layers:
+        return np.array([]).reshape(0, 2)
+    
+    split_layers_list = []
+    cumulative_depth = 0.0
+    
+    for layer in layers:
+        thickness = layer["thickness"]
+        unit_weight = layer["unit_weight"]
+        saturated_unit_weight = layer["saturated_unit_weight"]
+        
+        layer_top = cumulative_depth
+        layer_bottom = cumulative_depth + thickness
+        
+        # Case 1: Layer entirely above groundwater level
+        if layer_bottom <= groundwater_level:
+            split_layers_list.append([thickness, unit_weight])
+        
+        # Case 2: Layer entirely below groundwater level
+        elif layer_top >= groundwater_level:
+            split_layers_list.append([thickness, saturated_unit_weight])
+        
+        # Case 3: Groundwater level intersects this layer - split it
+        else:
+            # Upper part (above groundwater)
+            thickness_above = groundwater_level - layer_top
+            if thickness_above > 0:
+                split_layers_list.append([thickness_above, unit_weight])
+            
+            # Lower part (below groundwater)
+            thickness_below = layer_bottom - groundwater_level
+            if thickness_below > 0:
+                split_layers_list.append([thickness_below, saturated_unit_weight])
+        
+        cumulative_depth = layer_bottom
+    
+    return np.array(split_layers_list)
+
+
 spt_vs_correlations = vs_calc.spt_vs_correlations.SPT_CORRELATIONS
 vs30_correlations = list(vs_calc.vs30_correlations.VS30_CORRELATIONS.keys())
 
@@ -57,6 +140,10 @@ hammer_types = [
 assumed_borehole_diameter = 150
 
 # Example layer configuration for layer-based correlations
+# TODO: This will be replaced with database-extracted layer data where:
+#   - Layer thicknesses come from borehole/geological data
+#   - Unit weights are determined based on soil type and depth relative to groundwater
+#   - The split_layers_at_groundwater() function converts this to the simpler numpy array format
 example_layers = [
     {"thickness": 2, "unit_weight": 17, "saturated_unit_weight": 18},
     {"thickness": 3, "unit_weight": 16, "saturated_unit_weight": 18}
@@ -114,15 +201,18 @@ for borehole_id in borehole_ids:
     for spt_vs_correlation in spt_vs_correlations:
         for vs30_correlation in vs30_correlations:
             for hammer_type in hammer_types:
-                # Use layers for layered correlations
-                layers = example_layers if "layered" in spt_vs_correlation else None
-                
                 # Use extracted groundwater level if available, otherwise use default
                 groundwater_level = (
                     spt_search_result.extracted_gwl 
                     if spt_search_result.extracted_gwl is not None 
                     else constants.DEFAULT_GROUNDWATER_LEVEL
                 )
+                
+                # Use layers for layered correlations - split at groundwater level
+                if "layered" in spt_vs_correlation:
+                    layers = split_layers_at_groundwater(example_layers, groundwater_level)
+                else:
+                    layers = None
                 
                 spt = vs_calc.SPT(
                     name=str(spt_search_result.borehole_id),
