@@ -395,12 +395,6 @@ if __name__ == "__main__":
         constants.TEMP_SPT_AGS_DB_PATH,
     ]
 
-    database_paths = [
-        constants.OUTPUT_DB_PATH,
-        constants.TEMP_SPT_PDF_DB_PATH,
-        constants.TEMP_SPT_AGS_DB_PATH,
-    ]
-    
     print("Creating and initializing databases...")
     for db_path in database_paths:
         print(f"Creating database at {db_path}")

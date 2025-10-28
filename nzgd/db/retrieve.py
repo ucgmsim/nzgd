@@ -11,18 +11,11 @@ import pandas as pd
 from intervaltree import Interval, IntervalTree
 
 from nzgd.db import orm
+from nzgd import constants
 
 
-class SoilTypesEnum(Enum):
-    """Enum representing different types of soil."""
-
-    SAND = "SAND"
-    SILT = "SILT"
-    CLAY = "CLAY"
-    GRAVEL = "GRAVEL"
-    BOULDERS = "BOULDERS"
-    COBBLES = "COBBLES"
-
+# Dynamically create SoilTypesEnum from constants.SOIL_TYPE_TO_ID dictionary keys
+SoilTypesEnum = Enum('SoilTypesEnum', {soil_type: soil_type for soil_type in constants.SOIL_TYPE_TO_ID.keys()})
 
 @dataclass
 class NZGDRecord:
