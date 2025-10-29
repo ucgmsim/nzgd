@@ -13,6 +13,8 @@ all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_
 cpt_supplemental_values_filename: "cpt_supplemental_values.csv"
 cpt_id_and_supplemental_values_filename: "cpt_id_and_supplemental_values.csv"
 
+soil_type_unit_weights_filename: "soil_type_unit_weights.csv"
+
 nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
 
 nzgd_TypeDisplay_values_for_boreholes:

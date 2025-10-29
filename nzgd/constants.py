@@ -16,6 +16,8 @@ with (RESOURCE_PATH / "config.yaml").open() as f:
 
 INDEX_FILE_PATH = RESOURCE_PATH / CONFIG["nzgd_index_file_name"]
 
+SOIL_TYPE_UNIT_WEIGHTS_PATH = RESOURCE_PATH / CONFIG["soil_type_unit_weights_filename"]
+
 NZGD_TypeDisplay_VALUES_FOR_BOREHOLES = CONFIG["nzgd_TypeDisplay_values_for_boreholes"]
 NZGD_TypeDisplay_VALUES_FOR_CPTS = CONFIG["nzgd_TypeDisplay_values_for_CPTs"]
 
@@ -652,3 +654,5 @@ HAMMER_TYPE_TO_ID = {
 
 # Default groundwater level for SPT calculations when extracted_gwl is not available
 DEFAULT_GROUNDWATER_LEVEL = 2.0
+# Default efficiency for SPT calculations when efficiency is not available
+DEFAULT_SPT_EFFICIENCY = 75.0

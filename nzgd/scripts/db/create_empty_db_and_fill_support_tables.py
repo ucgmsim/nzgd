@@ -60,49 +60,6 @@ def initialize_database_at_path(db_path: Path):
     
     temp_db.close()
 
-
-def serialize_record_metadata(metadata_df: pd.DataFrame, conn: sqlite3.Connection):
-    cursor = conn.cursor()
-
-    # Fetch location id mappings from the database
-    location_categories = ["region", "district", "city", "suburb"]
-    location_id_maps = {}
-    for category in location_categories:
-        cursor.execute(f"SELECT id, value FROM {category}")
-        location_id_maps[category] = {name: id_ for id_, name in cursor.fetchall()}
-
-    # Map string columns in metadata_df to their corresponding ids
-    for category in location_categories:
-        metadata_df[f"{category}_id_db"] = metadata_df[category].map(
-            location_id_maps[category],
-        )
-
-    for _, row in tqdm(metadata_df.iterrows(), total=metadata_df.shape[0]):
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO nzgdrecord (nzgd_id, type_id, latitude, longitude, model_vs30_foster_2019, model_vs30_stddev_foster_2019, model_gwl_westerhoff_2018, original_investigation_name, investigation_date, published_date,  region_id, district_id, city_id, suburb_id)
-            VALUES (?, ? , ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                int(row["nzgd_id"]),
-                row["Type"],
-                row["Latitude"],
-                row["Longitude"],
-                row["model_vs30_foster_2019"],
-                row["model_vs30_std_foster_2019"],
-                row["model_gwl_westerhoff_2018"],
-                row["InvestigationId"],
-                row["CreatedOn"],
-                row["LastModifiedOn"],
-                row["region_id_db"],
-                row["district_id_db"],
-                row["city_id_db"],
-                row["suburb_id_db"],
-
-            ),
-        )
-
-
 def serialize_correlation_tables(conn: sqlite3.Connection):
     """Serialize correlation strings to the SQLite database.
 
@@ -377,11 +334,6 @@ def populate_database(db_path: Path, metadata_df: pd.DataFrame):
         serialize_investigation_type_table(db)
 
         serialize_location_name_tables(metadata_df, db)
-        
-        # Only populate record metadata for the main database
-        if db_path == constants.OUTPUT_DB_PATH:
-            serialize_record_metadata(metadata_df, db)
-
 
 if __name__ == "__main__":
     metadata_from_location_coordinates = pd.read_csv(
