@@ -297,14 +297,14 @@ search_comment__from_one_cell__values_for_target_depth_reached = [
 # Note: This pattern ensures that if a decimal point exists, digits must follow it
 NUMERICAL_VALUES_REGEX = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
 
-MAX_ALLOWED_GWL = 1000
-MIN_ALLOWED_GWL = 0
+MAX_ALLOWED_GWL = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_gwl"]
+MIN_ALLOWED_GWL = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_gwl"]
 
-MAX_ALLOWED_PREDRILL_DEPTH = 50
-MIN_ALLOWED_PREDRILL_DEPTH = 0
+MAX_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_predrill_depth"]
+MIN_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_predrill_depth"]
 
-MAX_ALLOWED_TIP_NET_AREA_RATIO = 1.0
-MIN_ALLOWED_TIP_NET_AREA_RATIO = 0.2
+MAX_ALLOWED_TIP_NET_AREA_RATIO = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_tip_net_area_ratio"]
+MIN_ALLOWED_TIP_NET_AREA_RATIO = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_tip_net_area_ratio"]
 
 gwl__not_measured_terms = [
     "no",
@@ -596,12 +596,14 @@ SOIL_TYPE_TO_ID = {
     "BOULDERS": 4,
     "CLAY": 5,
     "COBBLES": 6,
-    "GRAVEL": 7,
-    "PEAT": 8,
-    "SAND": 9,
+    "CONCRETE": 7,
+    "GRAVEL": 8,
+    "PEAT": 9,
+    "SAND": 10,
     "SANDSTONE": 10,
-    "SILT": 11,
-    "SILTSTONE": 12,
+    "SILT": 12,
+    "SILTSTONE": 13,
+    "TOPSOIL": 14,
 }
 
 CPT_TERMINATION_REASON_TO_ID = {
@@ -652,7 +654,10 @@ HAMMER_TYPE_TO_ID = {
     "Standard": 3,
 }
 
-# Default groundwater level for SPT calculations when extracted_gwl is not available
-DEFAULT_GROUNDWATER_LEVEL = 2.0
-# Default efficiency for SPT calculations when efficiency is not available
-DEFAULT_SPT_EFFICIENCY = 75.0
+# Default parameters for SPT calculations (loaded from config.yaml)
+DEFAULT_GROUNDWATER_LEVEL_m = CONFIG["default_groundwater_level_m"]
+DEFAULT_SPT_EFFICIENCY_PERCENT = CONFIG["default_spt_efficiency_percent"]
+DEFAULT_BOREHOLE_DIAMETER_mm = CONFIG["default_borehole_diameter_mm"]
+ASSUMED_BOTTOM_DEPTH_OF_LOWEST_LAYER_m = CONFIG["assumed_bottom_depth_of_lowest_layer_m"]
+
+WATER_UNIT_WEIGHT_kN_m3 = 9.81

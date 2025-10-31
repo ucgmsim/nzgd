@@ -2,12 +2,14 @@ soil_type,unsaturated_unit_weight_kN/m3,saturated_unit_weight_kN/m3,source_or_no
 ash,11,14,"Webb et al. (2014) - density dependent, typical bulk density 900-1200 kg/m³"
 asphalt,23,23,"Density 2.24 g/cm³ (2243 kg/m³), non-porous material"
 basalt,28,29,"Average density 2.9 g/cm³, solid rock 28-30 kN/m³"
-boulders,18,20,Estimated from gravel/rock properties
+boulders,18,20,"Estimated from gravel/rock properties"
 clay,16,18,"Brandenberg et al. (2010), typical ranges for various clay types"
-cobbles,18,21,Estimated from gravel properties
+cobbles,18,21,"Estimated from gravel properties"
+concrete,24,25,"https://www.aqua-calc.com/page/density-table/substance/concrete-coma-and-blank-asphalt"
 gravel,19,17,"Brandenberg et al. (2010), ranges for different gravel types"
 peat,3,10,"Lucas (1982), Galvin (1976) - highly variable, depends on decomposition"
 sand,18,20,"Brandenberg et al. (2010), typical ranges 13-16 (dry) to 18-20 (sat)"
 sandstone,23,24,"Pells (1999), typical sedimentary rock values"
 silt,19,17,"Brandenberg et al. (2010), fine-grained soil ranges"
 siltstone,21,23,"Rabata et al. - soft sedimentary rock, varies with saturation"
+topsoil,15,18,"https://mathalino.com/reviewer/geotechnical-engineering/unit-weights-and-densities-soil"

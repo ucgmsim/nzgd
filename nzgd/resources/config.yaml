@@ -4,16 +4,22 @@ subdirectories:
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p2p0_20251028.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p2p1_20251031.db"
 
-temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_20251028.db"
-temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_20251028.db"
+temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_20251031.db"
+temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_20251031.db"
 
 all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values.csv"
 cpt_supplemental_values_filename: "cpt_supplemental_values.csv"
 cpt_id_and_supplemental_values_filename: "cpt_id_and_supplemental_values.csv"
 
 soil_type_unit_weights_filename: "soil_type_unit_weights.csv"
+
+# Defaults for SPT calculations
+default_groundwater_level_m: 2.0
+default_spt_efficiency_percent: 75.0
+default_borehole_diameter_mm: 150.0
+assumed_bottom_depth_of_lowest_layer_m: 9999.0
 
 nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
 
@@ -110,3 +116,12 @@ infer_wrong_units_thresholds:
   fs_kpa_threshold: 10 # fs values consistently exceeding this threshold indicates that fs is in kPa.
   u_kpa_threshold: 5 # u values consistently exceeding this threshold indicates that u is in kPa.
   percent_exceeding_threshold: 75.0 # If greater than this percentage of data points exceed a parameter's threshold value, the parameter will be converted to its corresponding unit.
+
+# Bounds for validation of extracted parameters
+allowed_bounds_for_extracted_values:
+  max_allowed_gwl: 1000
+  min_allowed_gwl: 0
+  max_allowed_predrill_depth: 50
+  min_allowed_predrill_depth: 0
+  max_allowed_tip_net_area_ratio: 1.0
+  min_allowed_tip_net_area_ratio: 0.2

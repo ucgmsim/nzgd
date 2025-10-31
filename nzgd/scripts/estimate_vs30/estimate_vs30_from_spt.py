@@ -12,8 +12,7 @@ import pandas as pd
 
 import vs_calc
 from nzgd import constants
-from nzgd.db import retrieve
-
+#from nzgd.db import retrieve
 
 def get_unique_borehole_ids(db_path: Path) -> list[int]:
     """
@@ -46,88 +45,6 @@ def get_unique_borehole_ids(db_path: Path) -> list[int]:
     return natsort.natsorted(unique_borehole_ids)
 
 
-def split_layers_at_groundwater(
-    layers: list[dict], groundwater_level: float
-) -> np.ndarray:
-    """
-    Split soil layers at the groundwater level, assigning appropriate unit weights.
-    
-    Layers above the groundwater level use unsaturated unit_weight, while layers
-    below use saturated_unit_weight. If a layer is intersected by the groundwater
-    level, it is split into two sub-layers.
-    
-    Parameters
-    ----------
-    layers : list[dict]
-        List of layer dictionaries, each containing:
-        - 'thickness' (float): Layer thickness in meters
-        - 'unit_weight' (float): Unsaturated unit weight in kN/m³
-        - 'saturated_unit_weight' (float): Saturated unit weight in kN/m³
-    groundwater_level : float
-        Depth to groundwater level from surface in meters.
-        
-    Returns
-    -------
-    np.ndarray
-        Array of shape (n_layers, 2) where each row is [thickness, unit_weight].
-        Layers are ordered from top to bottom.
-        
-    Notes
-    -----
-    Edge cases:
-    - If groundwater_level <= 0: all layers use saturated_unit_weight
-    - If groundwater_level is deeper than all layers: all layers use unit_weight
-    - Zero-thickness layers are preserved (though unusual)
-    
-    Examples
-    --------
-    >>> layers = [
-    ...     {"thickness": 2, "unit_weight": 17, "saturated_unit_weight": 19},
-    ...     {"thickness": 3, "unit_weight": 16, "saturated_unit_weight": 18}
-    ... ]
-    >>> split_layers_at_groundwater(layers, groundwater_level=3.5)
-    array([[2.0, 17.0],   # Layer 1: entirely above GWL
-           [1.5, 16.0],   # Layer 2 upper: above GWL
-           [1.5, 18.0]])  # Layer 2 lower: below GWL
-    """
-    if not layers:
-        return np.array([]).reshape(0, 2)
-    
-    split_layers_list = []
-    cumulative_depth = 0.0
-    
-    for layer in layers:
-        thickness = layer["thickness"]
-        unit_weight = layer["unit_weight"]
-        saturated_unit_weight = layer["saturated_unit_weight"]
-        
-        layer_top = cumulative_depth
-        layer_bottom = cumulative_depth + thickness
-        
-        # Case 1: Layer entirely above groundwater level
-        if layer_bottom <= groundwater_level:
-            split_layers_list.append([thickness, unit_weight])
-        
-        # Case 2: Layer entirely below groundwater level
-        elif layer_top >= groundwater_level:
-            split_layers_list.append([thickness, saturated_unit_weight])
-        
-        # Case 3: Groundwater level intersects this layer - split it
-        else:
-            # Upper part (above groundwater)
-            thickness_above = groundwater_level - layer_top
-            if thickness_above > 0:
-                split_layers_list.append([thickness_above, unit_weight])
-            
-            # Lower part (below groundwater)
-            thickness_below = layer_bottom - groundwater_level
-            if thickness_below > 0:
-                split_layers_list.append([thickness_below, saturated_unit_weight])
-        
-        cumulative_depth = layer_bottom
-    
-    return np.array(split_layers_list)
-
 def get_finite_value_with_fallback(
     sptreport_df: pd.DataFrame,
     column_name: str,
@@ -158,178 +75,41 @@ def get_finite_value_with_fallback(
     
     # First try: get value for specific borehole_id
     sptreport_df_for_bh_id = df_numeric[df_numeric["borehole_id"] == borehole_id]
-
-    value_for_bh_id = sptreport_df_for_bh_id[column_name].iloc[0]
-    if pd.notna(value_for_bh_id) and np.isfinite(value_for_bh_id):
-        return value_for_bh_id
+    if not sptreport_df_for_bh_id.empty:
+        value_for_bh_id = sptreport_df_for_bh_id[column_name].iloc[0]
+        if pd.notna(value_for_bh_id) and np.isfinite(value_for_bh_id):
+            return value_for_bh_id
     
     # Second try: find any finite value in the entire dataframe
     finite_mask = df_numeric[column_name].notna() & np.isfinite(df_numeric[column_name])
     if finite_mask.any():
-        return sptreport_df_for_bh_id.loc[finite_mask, column_name].iloc[0]
+        return df_numeric.loc[finite_mask, column_name].iloc[0]
     
     # Third try: use default constant
     return default_value
 
 
-def split_layers_and_assign_unit_weights(
-    soil_measurements_df: pd.DataFrame,
-    groundwater_level: float,
-    soil_type_unit_weights_df: pd.DataFrame
-) -> pd.DataFrame:
-    """Split soil layers at groundwater level and assign appropriate unit weights.
-    
-    This function processes soil measurement data to:
-    1. Add bottom_depth for each layer
-    2. Split layers that span the groundwater level
-    3. Assign unit weights based on saturation state
-    
+def make_surface_layer(soil_measurements_for_bh_id_df: pd.DataFrame) -> pd.DataFrame:
+    """Add a layer extending to the surface if the first layer does not start at the surface.
+
     Parameters
     ----------
-    soil_measurements_df : pd.DataFrame
-        DataFrame with columns: measurement_id, borehole_id, top_depth, 
-        soil_type_id, soil_type_name
-    groundwater_level : float
-        Depth to groundwater level from surface in meters
-    soil_type_unit_weights_df : pd.DataFrame
-        Reference dataframe with columns: soil_type, unsaturated_unit_weight_kN/m3,
-        saturated_unit_weight_kN/m3
-        
+    soil_measurements_for_bh_id_df : pandas.DataFrame
+        DataFrame containing soil layers.
     Returns
     -------
-    pd.DataFrame
-        Enhanced dataframe with additional columns: bottom_depth, unit_weight, is_saturated
-        
-    Raises
-    ------
-    ValueError
-        If a soil type is not found in soil_type_unit_weights_df
+    pandas.DataFrame
+        DataFrame containing soil layers with a surface layer added if the first layer does not start at the surface.
     """
-    if soil_measurements_df.empty:
-        return soil_measurements_df
-    
-    # Create a copy to avoid modifying the original
-    df = soil_measurements_df.copy()
-    
-    # Add bottom_depth column (next layer's top_depth, or 100m for the last layer)
-    df['bottom_depth'] = df['top_depth'].shift(-1).fillna(100.0)
-    
-    # Create a list to store split layers
-    split_layers = []
-    
-    for idx, row in df.iterrows():
-        top_depth = row['top_depth']
-        bottom_depth = row['bottom_depth']
-        
-        # Check if groundwater level falls within this layer
-        if top_depth < groundwater_level < bottom_depth:
-            # Split into two layers
-            # Layer 1: from top_depth to groundwater_level (unsaturated)
-            layer_above = row.copy()
-            layer_above['bottom_depth'] = groundwater_level
-            split_layers.append(layer_above)
-            
-            # Layer 2: from groundwater_level to bottom_depth (saturated)
-            layer_below = row.copy()
-            layer_below['top_depth'] = groundwater_level
-            layer_below['bottom_depth'] = bottom_depth
-            split_layers.append(layer_below)
-        else:
-            # No split needed
-            split_layers.append(row)
-    
-    # Convert back to DataFrame
-    result_df = pd.DataFrame(split_layers).reset_index(drop=True)
-    
-    # Add unit weights based on saturation state
-    result_df['is_saturated'] = result_df['top_depth'] >= groundwater_level
-    
-    # Create a lookup dictionary for unit weights (convert to lowercase for matching)
-    unit_weight_lookup = {}
-    for _, uw_row in soil_type_unit_weights_df.iterrows():
-        soil_type = uw_row['soil_type'].lower()
-        unit_weight_lookup[soil_type] = {
-            'unsaturated': uw_row['unsaturated_unit_weight_kN/m3'],
-            'saturated': uw_row['saturated_unit_weight_kN/m3']
-        }
-    
-    # Assign unit weights
-    unit_weights = []
-    for _, row in result_df.iterrows():
-        soil_type_lower = row['soil_type_name'].lower()
-        
-        if soil_type_lower not in unit_weight_lookup:
-            raise ValueError(f"Soil type '{row['soil_type_name']}' not found in soil_type_unit_weights_df")
-        
-        if row['is_saturated']:
-            unit_weight = unit_weight_lookup[soil_type_lower]['saturated']
-        else:
-            unit_weight = unit_weight_lookup[soil_type_lower]['unsaturated']
-        
-        unit_weights.append(unit_weight)
-    
-    result_df['unit_weight'] = unit_weights
-    
-    return result_df
-
-
-def convert_layers_df_to_numpy(layers_df: pd.DataFrame) -> np.ndarray:
-    """Convert layer DataFrame to numpy array format for refactored Jaehwi calculation.
-    
-    Parameters
-    ----------
-    layers_df : pd.DataFrame
-        DataFrame with columns: top_depth, bottom_depth, unit_weight
-        
-    Returns
-    -------
-    np.ndarray
-        Array of shape (n_layers, 2) with columns [thickness, unit_weight]
-        Format expected by jaehwi_calculate_effective_stress_refactored()
-    """
-    if layers_df.empty:
-        return np.array([])
-    
-    thickness = layers_df['bottom_depth'] - layers_df['top_depth']
-    unit_weight = layers_df['unit_weight']
-    
-    return np.column_stack([thickness, unit_weight])
-
-
-def convert_layers_df_to_dict_list(layers_df: pd.DataFrame) -> list[dict]:
-    """Convert layer DataFrame to dict list format for original Jaehwi calculation.
-    
-    Parameters
-    ----------
-    layers_df : pd.DataFrame
-        DataFrame with columns: top_depth, bottom_depth, unit_weight
-        
-    Returns
-    -------
-    list[dict]
-        List of dictionaries with keys: thickness, unit_weight, saturated_unit_weight
-        Format expected by jaehwi_calculate_effective_stress()
-        
-    Notes
-    -----
-    Since layers are already split at the groundwater level with correct weights,
-    both unit_weight and saturated_unit_weight are set to the same value.
-    """
-    if layers_df.empty:
-        return []
-    
-    layers_list = []
-    for _, row in layers_df.iterrows():
-        thickness = row['bottom_depth'] - row['top_depth']
-        unit_weight = row['unit_weight']
-        
-        layers_list.append({
-            'thickness': thickness,
-            'unit_weight': unit_weight,
-            'saturated_unit_weight': unit_weight  # Same as unit_weight since already split
-        })
-    
-    return layers_list
+    if not soil_measurements_for_bh_id_df.empty and soil_measurements_for_bh_id_df['top_depth_m'].iloc[0] != 0:
+        surface_row = soil_measurements_for_bh_id_df.iloc[0].copy()
+        surface_row['top_depth_m'] = 0.0
+        soil_measurements_for_bh_id_df = pd.concat([
+            pd.DataFrame([surface_row]),
+            soil_measurements_for_bh_id_df
+        ], ignore_index=True)
+        soil_measurements_for_bh_id_df = soil_measurements_for_bh_id_df.sort_values('top_depth_m').reset_index(drop=True)
+    return soil_measurements_for_bh_id_df
 
 
 # Soil type name to enum mapping for SPT correlations
@@ -356,7 +136,7 @@ def map_soil_types_to_measurement_depths(
     measurements_df : pd.DataFrame
         DataFrame with 'depth' column containing SPT measurement depths
     layers_df : pd.DataFrame
-        DataFrame with columns: top_depth, bottom_depth, soil_type_name
+        DataFrame with columns: top_depth_m, bottom_depth_m, soil_type_name
         
     Returns
     -------
@@ -376,7 +156,7 @@ def map_soil_types_to_measurement_depths(
     soil_types = []
     for depth in measurements_df['depth']:
         # Find layer containing this depth
-        layer_mask = (layers_df['top_depth'] <= depth) & (depth < layers_df['bottom_depth'])
+        layer_mask = (layers_df['top_depth_m'] <= depth) & (depth < layers_df['bottom_depth_m'])
         matching_layers = layers_df[layer_mask]
         
         if not matching_layers.empty:
@@ -399,18 +179,12 @@ soil_type_unit_weights_df = pd.read_csv(constants.SOIL_TYPE_UNIT_WEIGHTS_PATH)
 spt_vs_correlations = vs_calc.spt_vs_correlations.SPT_CORRELATIONS
 vs30_correlations = list(vs_calc.vs30_correlations.VS30_CORRELATIONS.keys())
 
-# hammer_types = [
-#     vs_calc.constants.HammerType.Auto,
-#     vs_calc.constants.HammerType.Safety,
-#     vs_calc.constants.HammerType.Standard,
-# ]
-
 hammer_types = [vs_calc.constants.HammerType.Auto]#,
 #     vs_calc.constants.HammerType.Safety,
 #     vs_calc.constants.HammerType.Standard,
 # ]
 
-assumed_borehole_diameter = 150
+assumed_borehole_diameter = constants.DEFAULT_BOREHOLE_DIAMETER_mm
 
 conn = sqlite3.connect(constants.OUTPUT_DB_PATH)
 nzgd_ids = pd.read_sql_query(
@@ -420,7 +194,7 @@ nzgd_ids = pd.read_sql_query(
 ).to_numpy().flatten().tolist()
 
 # a small subset of nzgd_ids for testing
-nzgd_ids = nzgd_ids[:10]
+# nzgd_ids = nzgd_ids[209:210]
 
 spt_vs30_data = []
 
@@ -468,6 +242,9 @@ for nzgd_id in nzgd_ids:
         params=(nzgd_id,)
     )
 
+    # Rename `top_depth` column name from the SQLite database to `top_depth_m` so the units are explicit
+    soil_measurements_df.rename(columns={'top_depth': 'top_depth_m'}, inplace=True)
+
     bh_ids_with_spt_data = sptreport_df["borehole_id"].unique().tolist()
     bh_ids_with_soil_types = soil_measurements_df["borehole_id"].unique().tolist()
 
@@ -480,7 +257,7 @@ for nzgd_id in nzgd_ids:
             sptreport_df,
             'extracted_gwl',
             bh_id,
-            constants.DEFAULT_GROUNDWATER_LEVEL
+            constants.DEFAULT_GROUNDWATER_LEVEL_m
         )
 
         # Get efficiency with fallbacks
@@ -488,7 +265,7 @@ for nzgd_id in nzgd_ids:
             sptreport_df,
             'efficiency',
             bh_id,
-            constants.DEFAULT_SPT_EFFICIENCY
+            constants.DEFAULT_SPT_EFFICIENCY_PERCENT
         )
 
         if len(bh_ids_with_spt_data) < len(bh_ids_with_soil_types):
@@ -497,48 +274,43 @@ for nzgd_id in nzgd_ids:
             bh_id_for_soil_types = bh_id
 
         soil_measurements_for_bh_id_df = soil_measurements_df[soil_measurements_df["borehole_id"] == bh_id_for_soil_types]
-        
-        # Add a layer extending to the surface if the first layer is below the surface
-        if not soil_measurements_for_bh_id_df.empty and soil_measurements_for_bh_id_df['top_depth'].iloc[0] != 0:
-            # Get the first row to duplicate
-            first_row = soil_measurements_for_bh_id_df.iloc[0].copy()
-            
-            # Create a new row with top_depth = 0
-            surface_row = first_row.copy()
-            surface_row['top_depth'] = 0.0
-            
-            # Add the surface row at the beginning
-            soil_measurements_for_bh_id_df = pd.concat([
-                pd.DataFrame([surface_row]),  # Convert single row to DataFrame
-                soil_measurements_for_bh_id_df
-            ], ignore_index=True)
-            
-            # Sort by top_depth to ensure proper ordering
-            soil_measurements_for_bh_id_df = soil_measurements_for_bh_id_df.sort_values('top_depth').reset_index(drop=True)
-        
+        soil_measurements_for_bh_id_df = make_surface_layer(soil_measurements_for_bh_id_df)
+
         # Process soil layer data if available
         has_soil_data = not soil_measurements_for_bh_id_df.empty
-        
+
         if has_soil_data:
-            # Split layers at groundwater level and assign unit weights
+            # Build layers DataFrame: layer_thickness_m, unsaturated_unit_weight_kN/m3, saturated_unit_weight_kN/m3
             try:
-                layers_df = split_layers_and_assign_unit_weights(
-                    soil_measurements_for_bh_id_df,
-                    extracted_gwl_for_bh_id,
-                    soil_type_unit_weights_df
+                # Compute bottom_depth_m and thickness
+                layers_base_df = soil_measurements_for_bh_id_df.copy()
+                layers_base_df['bottom_depth_m'] = layers_base_df['top_depth_m'].shift(-1).fillna(constants.ASSUMED_BOTTOM_DEPTH_OF_LOWEST_LAYER_m)
+                layers_base_df['layer_thickness_m'] = layers_base_df['bottom_depth_m'] - layers_base_df['top_depth_m']
+
+                # Prepare merge keys (lowercase for robust matching)
+                layers_base_df['_soil_key'] = layers_base_df['soil_type_name'].str.lower()
+                unit_weights_df = soil_type_unit_weights_df.copy()
+                unit_weights_df['_soil_key'] = unit_weights_df['soil_type'].str.lower()
+
+                merged_df = layers_base_df.merge(
+                    unit_weights_df[['unsaturated_unit_weight_kN/m3', 'saturated_unit_weight_kN/m3', '_soil_key']],
+                    on='_soil_key', how='left'
                 )
+
+                if merged_df[['unsaturated_unit_weight_kN/m3', 'saturated_unit_weight_kN/m3']].isna().any().any():
+                    missing = merged_df[merged_df['unsaturated_unit_weight_kN/m3'].isna() | merged_df['saturated_unit_weight_kN/m3'].isna()]['soil_type_name'].unique()
+                    raise ValueError(f"Missing unit weights for soil types: {missing}")
+
+                layers_df = merged_df[['top_depth_m', 'bottom_depth_m', 'soil_type_name', 'layer_thickness_m']].copy()
+                layers_df['unsaturated_unit_weight_kN/m3'] = merged_df['unsaturated_unit_weight_kN/m3']
+                layers_df['saturated_unit_weight_kN/m3'] = merged_df['saturated_unit_weight_kN/m3']
+
             except ValueError as e:
                 print(f"Skipping borehole {bh_id} soil data: {e}")
                 has_soil_data = False
-                layers_df = pd.DataFrame()  # Empty dataframe
+                layers_df = pd.DataFrame()
         else:
             layers_df = pd.DataFrame()  # Empty dataframe
-        
-        # Convert to numpy format for layered correlations
-        layers_numpy = convert_layers_df_to_numpy(layers_df) if has_soil_data else np.array([])
-        
-        # Convert to dict list format if needed for validation/testing
-        # layers_dict_list = convert_layers_df_to_dict_list(layers_df)
         
         # Get SPT measurements for this specific borehole
         measurements_df = sptmeasurements_df[sptmeasurements_df["borehole_id"] == bh_id].copy()
@@ -565,8 +337,11 @@ for nzgd_id in nzgd_ids:
                     continue
                 for vs30_correlation in vs30_correlations:
                     for hammer_type in hammer_types:
-                        # Use layers for layered correlations
-                        layers = layers_numpy if is_layered else None
+                        # Use DataFrame layers for layered correlations - only include required columns
+                        if is_layered and has_soil_data:
+                            layers = layers_df[['layer_thickness_m', 'unsaturated_unit_weight_kN/m3', 'saturated_unit_weight_kN/m3']].copy()
+                        else:
+                            layers = None
                         
                         # Create SPT object
                         spt = vs_calc.SPT(
