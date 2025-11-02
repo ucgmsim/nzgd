@@ -631,10 +631,10 @@ CPT_TO_VS_CORRELATION_TO_ID = {
 }
 
 SPT_TO_VS_CORRELATION_TO_ID = {
-    "brandenberg_2010": 1,
-    "kwak_2015": 2,
-    "brandenberg_2010_layered": 3,
-    "kwak_2015_layered": 4,
+    "brandenberg_2010_using_bad_effective_stress": 1,
+    "kwak_2015_using_bad_effective_stress": 2,
+    "brandenberg_2010_layered_effective_stress": 3,
+    "kwak_2015_layered_effective_stress": 4,
 }
 
 # Correlation mappings for CPT and Vs30 correlations
@@ -658,6 +658,13 @@ HAMMER_TYPE_TO_ID = {
 DEFAULT_GROUNDWATER_LEVEL_m = CONFIG["default_groundwater_level_m"]
 DEFAULT_SPT_EFFICIENCY_PERCENT = CONFIG["default_spt_efficiency_percent"]
 DEFAULT_BOREHOLE_DIAMETER_mm = CONFIG["default_borehole_diameter_mm"]
-ASSUMED_BOTTOM_DEPTH_OF_LOWEST_LAYER_m = CONFIG["assumed_bottom_depth_of_lowest_layer_m"]
+BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m = CONFIG["buffer_below_lowest_measurement_depth_m"]
 
 WATER_UNIT_WEIGHT_kN_m3 = 9.81
+
+## The following constant was found to be added to all SPT depths in vs_calc with the following explanation:
+# Spt testing driven a pile 18 inches into the ground in 3 incremental steps. the
+# number of blows is ignored and only consider the total of the second and third increments. We interests
+# in the vertical effective stress after second increments hence add 12 inches(0.3 m) on top of the start
+# depth given
+SPT_DEPTH_OFFSET_m = 0.3048

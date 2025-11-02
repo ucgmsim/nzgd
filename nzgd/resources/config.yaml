@@ -19,7 +19,7 @@ soil_type_unit_weights_filename: "soil_type_unit_weights.csv"
 default_groundwater_level_m: 2.0
 default_spt_efficiency_percent: 75.0
 default_borehole_diameter_mm: 150.0
-assumed_bottom_depth_of_lowest_layer_m: 9999.0
+buffer_below_lowest_measurement_depth_m: 0.01 # buffer below the lowest measurement depth to ensure the lowest layer is within the lowest layer
 
 nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
 

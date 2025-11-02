@@ -193,9 +193,6 @@ nzgd_ids = pd.read_sql_query(
     params=(2,), # 2 is the id for boreholes
 ).to_numpy().flatten().tolist()
 
-# a small subset of nzgd_ids for testing
-# nzgd_ids = nzgd_ids[209:210]
-
 spt_vs30_data = []
 
 progress_bar = tqdm(total=len(nzgd_ids))
@@ -284,7 +281,7 @@ for nzgd_id in nzgd_ids:
             try:
                 # Compute bottom_depth_m and thickness
                 layers_base_df = soil_measurements_for_bh_id_df.copy()
-                layers_base_df['bottom_depth_m'] = layers_base_df['top_depth_m'].shift(-1).fillna(constants.ASSUMED_BOTTOM_DEPTH_OF_LOWEST_LAYER_m)
+                layers_base_df['bottom_depth_m'] = layers_base_df['top_depth_m'].shift(-1).fillna(sptmeasurements_df["depth"].max()+constants.BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m + constants.SPT_DEPTH_OFFSET_m)
                 layers_base_df['layer_thickness_m'] = layers_base_df['bottom_depth_m'] - layers_base_df['top_depth_m']
 
                 # Prepare merge keys (lowercase for robust matching)
