@@ -3,48 +3,13 @@ Estimate Vs30 from the SPT data in the database and store results back in the da
 """
 
 import sqlite3
-from pathlib import Path
 
-import natsort
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 import vs_calc
 from nzgd import constants
-
-# from nzgd.db import retrieve
-
-
-def get_unique_borehole_ids(db_path: Path) -> list[int]:
-    """
-    Get unique borehole IDs from the SPT report table.
-
-    Parameters
-    ----------
-    db_path : Path
-        Path to the SQLite database file.
-
-    Returns
-    -------
-    list[int]
-        Sorted list of unique borehole IDs.
-    """
-    # Connect to the SQLite database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Execute the query to get unique borehole_id values
-    cursor.execute("SELECT DISTINCT borehole_id FROM sptreport")
-    unique_borehole_ids = cursor.fetchall()
-
-    # Close the connection
-    conn.close()
-
-    # Extract the borehole_id values from the result
-    unique_borehole_ids = [row[0] for row in unique_borehole_ids]
-
-    return natsort.natsorted(unique_borehole_ids)
 
 
 def get_finite_value_with_fallback(
@@ -57,7 +22,7 @@ def get_finite_value_with_fallback(
     sptreport_df : pd.DataFrame
         DataFrame containing SPT report data
     column_name : str
-        Name of the column to extract value from (e.g., 'extracted_gwl', 'efficiency')
+        Name of the column to extract value from (e.g., 'extracted_gwl_m', 'efficiency')
     borehole_id : int
         The specific borehole_id to try first
     default_value : float
@@ -72,8 +37,8 @@ def get_finite_value_with_fallback(
     df_numeric = sptreport_df.copy()
     df_numeric[column_name] = pd.to_numeric(sptreport_df[column_name], errors="coerce")
 
-    # First try: get value for specific borehole_id
-    sptreport_df_for_bh_id = df_numeric[df_numeric["borehole_id"] == borehole_id]
+    # First try: get value for specific spt_id
+    sptreport_df_for_bh_id = df_numeric[df_numeric["spt_id"] == borehole_id]
     if not sptreport_df_for_bh_id.empty:
         value_for_bh_id = sptreport_df_for_bh_id[column_name].iloc[0]
         if pd.notna(value_for_bh_id) and np.isfinite(value_for_bh_id):
@@ -157,7 +122,7 @@ def map_soil_types_to_measurement_depths(
         return np.repeat(vs_calc.constants.SoilType.Clay, len(measurements_df))
 
     soil_types = []
-    for depth in measurements_df["depth"]:
+    for depth in measurements_df["depth_m"]:
         # Find layer containing this depth
         layer_mask = (layers_df["top_depth_m"] <= depth) & (
             depth < layers_df["bottom_depth_m"]
@@ -211,70 +176,70 @@ for nzgd_id in nzgd_ids:
     progress_bar.update()
 
     sptreport_df = pd.read_sql_query(
-        "SELECT * FROM sptreport WHERE nzgd_id = ? ORDER BY borehole_id ASC",
+        "SELECT * FROM sptreport WHERE nzgd_id = ? ORDER BY spt_id ASC",
         conn,
         params=(nzgd_id,),
     )
 
-    # Get the SPT measurements for the borehole_ids corresonding to this nzgd_id
+    # Get the SPT measurements for the spt_ids corresonding to this nzgd_id
     sptmeasurements_df = pd.read_sql_query(
         """
         SELECT m.* 
         FROM sptmeasurements m
-        INNER JOIN sptreport r ON m.borehole_id = r.borehole_id
+        INNER JOIN sptreport r ON m.spt_id = r.spt_id
         WHERE r.nzgd_id = ?
-        ORDER BY m.borehole_id, m.depth ASC
+        ORDER BY m.spt_id, m.depth_m ASC
         """,
         conn,
         params=(nzgd_id,),
     )
 
-    # Get the soil measurements for the borehole_ids corresonding to this nzgd_id
+    # Get the soil measurements for the spt_ids corresonding to this nzgd_id
     soil_measurements_df = pd.read_sql_query(
         """
         SELECT 
-            sm.measurement_id,
-            sm.report_id as borehole_id,
-            sm.top_depth,
+            sm.soil_measurement_id,
+            sm.spt_id as spt_id,
+            sm.top_depth_m,
             st.id as soil_type_id,
-            st.name as soil_type_name
+            st.value as soil_type_name
         FROM soilmeasurements sm
-        INNER JOIN sptreport r ON sm.report_id = r.borehole_id
-        INNER JOIN soilmeasurementsoiltype smst ON sm.measurement_id = smst.soil_measurement_id
+        INNER JOIN sptreport r ON sm.spt_id = r.spt_id
+        INNER JOIN soilmeasurementsoiltype smst ON sm.soil_measurement_id = smst.soil_measurement_id
         INNER JOIN soiltypes st ON smst.soil_type_id = st.id
         WHERE r.nzgd_id = ?
-        ORDER BY sm.report_id, sm.top_depth ASC
+        ORDER BY sm.spt_id, sm.top_depth_m ASC
         """,
         conn,
         params=(nzgd_id,),
     )
 
-    # Rename `top_depth` column name from the SQLite database to `top_depth_m` so the units are explicit
-    soil_measurements_df.rename(columns={"top_depth": "top_depth_m"}, inplace=True)
+    spt_ids_with_spt_data = sptreport_df["spt_id"].unique().tolist()
+    bh_ids_with_soil_types = soil_measurements_df["spt_id"].unique().tolist()
 
-    bh_ids_with_spt_data = sptreport_df["borehole_id"].unique().tolist()
-    bh_ids_with_soil_types = soil_measurements_df["borehole_id"].unique().tolist()
+    soil_counts_by_borehole = soil_measurements_df.groupby("spt_id").size()
 
-    soil_counts_by_borehole = soil_measurements_df.groupby("borehole_id").size()
-
-    for bh_id in bh_ids_with_spt_data:
+    for spt_id in spt_ids_with_spt_data:
         # Get ground water level with fallbacks
         extracted_gwl_for_bh_id = get_finite_value_with_fallback(
-            sptreport_df, "extracted_gwl", bh_id, constants.DEFAULT_GROUNDWATER_LEVEL_m
+            sptreport_df,
+            "extracted_gwl_m",
+            spt_id,
+            constants.DEFAULT_GROUNDWATER_LEVEL_m,
         )
 
         # Get efficiency with fallbacks
         efficiency_for_bh_id = get_finite_value_with_fallback(
-            sptreport_df, "efficiency", bh_id, constants.DEFAULT_SPT_EFFICIENCY_PERCENT
+            sptreport_df, "efficiency", spt_id, constants.DEFAULT_SPT_EFFICIENCY_PERCENT
         )
 
-        if len(bh_ids_with_spt_data) < len(bh_ids_with_soil_types):
-            bh_id_for_soil_types = soil_counts_by_borehole.idxmax()
+        if len(spt_ids_with_spt_data) < len(bh_ids_with_soil_types):
+            spt_id_for_soil_types = soil_counts_by_borehole.idxmax()
         else:
-            bh_id_for_soil_types = bh_id
+            spt_id_for_soil_types = spt_id
 
         soil_measurements_for_bh_id_df = soil_measurements_df[
-            soil_measurements_df["borehole_id"] == bh_id_for_soil_types
+            soil_measurements_df["spt_id"] == spt_id_for_soil_types
         ]
         soil_measurements_for_bh_id_df = make_surface_layer(
             soil_measurements_for_bh_id_df
@@ -292,7 +257,7 @@ for nzgd_id in nzgd_ids:
                     layers_base_df["top_depth_m"]
                     .shift(-1)
                     .fillna(
-                        sptmeasurements_df["depth"].max()
+                        sptmeasurements_df["depth_m"].max()
                         + constants.BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m
                         + constants.SPT_DEPTH_OFFSET_m
                     )
@@ -350,15 +315,15 @@ for nzgd_id in nzgd_ids:
                 ]
 
             except ValueError as e:
-                print(f"Skipping borehole {bh_id} soil data: {e}")
+                print(f"Skipping SPT {spt_id} soil data: {e}")
                 has_soil_data = False
                 layers_df = pd.DataFrame()
         else:
             layers_df = pd.DataFrame()  # Empty dataframe
 
-        # Get SPT measurements for this specific borehole
+        # Get SPT measurements for this specific spt_id
         measurements_df = sptmeasurements_df[
-            sptmeasurements_df["borehole_id"] == bh_id
+            sptmeasurements_df["spt_id"] == spt_id
         ].copy()
 
         # Skip if no measurements
@@ -401,8 +366,8 @@ for nzgd_id in nzgd_ids:
 
                         # Create SPT object
                         spt = vs_calc.SPT(
-                            name=str(bh_id),
-                            depth=measurements_df["depth"].to_numpy(),
+                            name=str(spt_id),
+                            depth=measurements_df["depth_m"].to_numpy(),
                             n=measurements_df["n"].to_numpy(),
                             hammer_type=hammer_type,
                             borehole_diameter=assumed_borehole_diameter,
@@ -441,7 +406,7 @@ for nzgd_id in nzgd_ids:
                         if not isinstance(error, Exception):
                             spt_vs30_data.append(
                                 (
-                                    bh_id,
+                                    spt_id,
                                     constants.SPT_TO_VS_CORRELATION_TO_ID[
                                         spt_vs_correlation_name
                                     ],
@@ -469,7 +434,7 @@ if spt_vs30_data:
     # executemany automatically assigns the vs30_id primary key so it is not specified
     cursor.executemany(
         """
-        INSERT INTO sptvs30estimates (borehole_id, spt_to_vs_correlation_id, vs_to_vs30_correlation_id, assumed_borehole_diameter, assumed_hammer_type_id, estimate_used_extracted_efficiency, estimate_used_extracted_layer_soil_types, vs30, vs30_stddev)
+        INSERT INTO sptvs30estimates (spt_id, spt_to_vs_correlation_id, vs_to_vs30_correlation_id, assumed_borehole_diameter_mm, assumed_hammer_type_id, estimate_used_extracted_efficiency, estimate_used_extracted_layer_soil_types, vs30, vs30_stddev)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         spt_vs30_data,

@@ -91,7 +91,17 @@ def extract_soil_report(description: str) -> set[str]:
 
     """
     soil_types = set(SOIL_TYPE_TO_ID.keys())
-    return soil_types & {word.strip(",.;").upper() for word in description.split()}
+
+    # Initially try to find soil types that are already written in upper case
+    found_soil_types = soil_types & {word.strip(",.;") for word in description.split()}
+
+    # If no soil types were found, try to find soil types that are written in lower case
+    if len(found_soil_types) == 0:
+        found_soil_types = soil_types & {
+            word.strip(",.;").upper() for word in description.split()
+        }
+
+    return found_soil_types
 
 
 def extract_spt_value(text: str) -> int | None:
@@ -552,14 +562,16 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
     ]
     cursor.executemany(
         """
-        INSERT OR REPLACE INTO sptreport (borehole_id, nzgd_id, efficiency, extracted_gwl, source_file)
+        INSERT OR REPLACE INTO sptreport (spt_id, nzgd_id, efficiency, extracted_gwl_m, source_file)
         VALUES (?, ?, ?, ?, ?)
     """,
         report_data,
     )
 
-    cursor.execute("SELECT id, name FROM SoilTypes")
-    soil_type_id_map = {name: soil_type_id for soil_type_id, name in cursor.fetchall()}
+    cursor.execute("SELECT id, value FROM SoilTypes")
+    soil_type_id_map = {
+        value: soil_type_id for soil_type_id, value in cursor.fetchall()
+    }
 
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
     for report in reports:
@@ -571,7 +583,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                 n_value = row["N"] if pd.notna(row["N"]) else None
                 cursor.execute(
                     """
-                    INSERT INTO sptmeasurements (borehole_id, depth, n)
+                    INSERT INTO sptmeasurements (spt_id, depth_m, n)
                     VALUES (?, ?, ?)
                 """,
                     (report.borehole_id, depth, n_value),
@@ -583,7 +595,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                 top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
                 cursor.execute(
                     """
-                                   INSERT INTO soilmeasurements (report_id, top_depth)
+                                   INSERT INTO soilmeasurements (spt_id, top_depth_m)
                                    VALUES (?, ?)
                                """,
                     (report.borehole_id, top_depth),

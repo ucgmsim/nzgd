@@ -149,42 +149,42 @@ class SPTReport:
         """
         # Create a DataFrame for SPT measurements
         measurements_data = [
-            {"depth": m.depth, "n_value": m.n}
-            for m in sorted(report.measurements, key=lambda x: x.depth)
+            {"depth": m.depth_m, "n_value": m.n}
+            for m in sorted(report.measurements, key=lambda x: x.depth_m)
         ]
         measurements_df = pd.DataFrame(measurements_data)
 
         # Create an IntervalTree for soil measurements
         soil_measurements_tree = IntervalTree()
-        measurements = sorted(report.soil_measurements, key=lambda x: x.top_depth)
+        measurements = sorted(report.soil_measurements, key=lambda x: x.top_depth_m)
         if measurements:
             for s, next in itertools.pairwise(measurements):
-                if s.top_depth == next.top_depth:
+                if s.top_depth_m == next.top_depth_m:
                     continue
                 for soil_type in s.soil_types:
                     soil_measurements_tree.add(
                         Interval(
-                            s.top_depth,
-                            next.top_depth,
-                            SoilTypesEnum[soil_type.soil_type_id.name],
+                            s.top_depth_m,
+                            next.top_depth_m,
+                            SoilTypesEnum[soil_type.soil_type_id.value],
                         ),
                     )
             bottom_measurement = measurements[-1]
             for soil_type in bottom_measurement.soil_types:
                 soil_measurements_tree.add(
                     Interval(
-                        bottom_measurement.top_depth,
+                        bottom_measurement.top_depth_m,
                         100,
-                        SoilTypesEnum[soil_type.soil_type_id.name],
+                        SoilTypesEnum[soil_type.soil_type_id.value],
                     ),
                 )
 
         return cls(
-            borehole_id=report.borehole_id,
+            borehole_id=report.spt_id,
             nzgd_id=report.nzgd_id,
             efficiency=report.efficiency,
-            extracted_gwl=report.extracted_gwl,
-            gwl_residual=report.gwl_residual,
+            extracted_gwl=report.extracted_gwl_m,
+            gwl_residual=report.gwl_residual_m,
             source_file=report.source_file,
             nzgd_record=NZGDRecord.from_orm(report.nzgd_id),
             measurements=measurements_df,
@@ -210,7 +210,7 @@ def search_spt_reports(
     Parameters
     ----------
     borehole_id : Optional[int], optional
-        The borehole ID to filter by.
+        The SPT ID (borehole_id) to filter by.
     min_efficiency : Optional[float], optional
         The minimum efficiency to filter by.
     max_efficiency : Optional[float], optional

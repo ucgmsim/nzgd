@@ -4,10 +4,10 @@ subdirectories:
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p2p1_20251031.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p2p3_20251104.db"
 
-temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_20251031.db"
-temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_20251031.db"
+temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p2p3_20251104.db"
+temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p2p3_20251104.db"
 
 all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values.csv"
 cpt_supplemental_values_filename: "cpt_supplemental_values.csv"

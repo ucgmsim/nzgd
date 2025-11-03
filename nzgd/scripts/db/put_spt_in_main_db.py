@@ -1,7 +1,7 @@
 """Copy SPT data from temporary databases to the main database.
 
 This script copies SPT-related data from both temporary SPT databases (AGS and PDF)
-into the main database. It handles borehole_id conflicts by incrementing the ID
+into the main database. It handles spt_id conflicts by incrementing the ID
 when necessary.
 """
 
@@ -11,8 +11,8 @@ from pathlib import Path
 from nzgd import constants
 
 
-def get_next_available_borehole_id(main_conn: sqlite3.Connection) -> int:
-    """Get the next available borehole_id in the main database.
+def get_next_available_spt_id(main_conn: sqlite3.Connection) -> int:
+    """Get the next available spt_id in the main database.
 
     Parameters
     ----------
@@ -22,10 +22,10 @@ def get_next_available_borehole_id(main_conn: sqlite3.Connection) -> int:
     Returns
     -------
     int
-        The next available borehole_id.
+        The next available spt_id.
     """
     cursor = main_conn.cursor()
-    cursor.execute("SELECT MAX(borehole_id) FROM sptreport")
+    cursor.execute("SELECT MAX(spt_id) FROM sptreport")
     result = cursor.fetchone()
     max_id = result[0] if result[0] is not None else 0
     return max_id + 1
@@ -48,76 +48,72 @@ def copy_spt_reports(
     Returns
     -------
     dict[int, int]
-        Mapping from original borehole_id to new borehole_id.
+        Mapping from original spt_id to new spt_id.
     """
     temp_cursor = temp_conn.cursor()
     main_cursor = main_conn.cursor()
 
     # Get all SPT reports from temporary database
     temp_cursor.execute(
-        "SELECT borehole_id, nzgd_id, efficiency, extracted_gwl, gwl_residual, source_file FROM sptreport"
+        "SELECT spt_id, nzgd_id, efficiency, extracted_gwl_m, gwl_residual_m, source_file FROM sptreport"
     )
     temp_reports = temp_cursor.fetchall()
 
-    # Get existing borehole_ids in main database
-    main_cursor.execute("SELECT borehole_id FROM sptreport")
-    existing_borehole_ids = {row[0] for row in main_cursor.fetchall()}
+    # Get existing spt_ids in main database
+    main_cursor.execute("SELECT spt_id FROM sptreport")
+    existing_spt_ids = {row[0] for row in main_cursor.fetchall()}
 
-    # Create mapping from original borehole_id to new borehole_id
-    borehole_id_mapping = {}
-    next_available_id = get_next_available_borehole_id(main_conn)
+    # Create mapping from original spt_id to new spt_id
+    spt_id_mapping = {}
+    next_available_id = get_next_available_spt_id(main_conn)
 
     for temp_report in temp_reports:
         (
-            original_borehole_id,
+            original_spt_id,
             nzgd_id,
             efficiency,
-            extracted_gwl,
-            gwl_residual,
+            extracted_gwl_m,
+            gwl_residual_m,
             source_file,
         ) = temp_report
 
         # Always use next available ID to ensure uniqueness
-        # This allows the same nzgd_id to appear multiple times with different borehole_ids
-        new_borehole_id = next_available_id
+        # This allows the same nzgd_id to appear multiple times with different spt_ids
+        new_spt_id = next_available_id
         next_available_id += 1
 
-        if original_borehole_id in existing_borehole_ids:
-            print(
-                f"Borehole ID {original_borehole_id} already exists, using {new_borehole_id}"
-            )
+        if original_spt_id in existing_spt_ids:
+            print(f"SPT ID {original_spt_id} already exists, using {new_spt_id}")
         else:
-            print(
-                f"Using borehole ID {new_borehole_id} for original {original_borehole_id}"
-            )
+            print(f"Using SPT ID {new_spt_id} for original {original_spt_id}")
 
-        borehole_id_mapping[original_borehole_id] = new_borehole_id
+        spt_id_mapping[original_spt_id] = new_spt_id
 
         # Insert into main database
         main_cursor.execute(
             """
             INSERT INTO sptreport 
-            (borehole_id, nzgd_id, efficiency, extracted_gwl, gwl_residual, source_file)
+            (spt_id, nzgd_id, efficiency, extracted_gwl_m, gwl_residual_m, source_file)
             VALUES (?, ?, ?, ?, ?, ?)
         """,
             (
-                new_borehole_id,
+                new_spt_id,
                 nzgd_id,
                 efficiency,
-                extracted_gwl,
-                gwl_residual,
+                extracted_gwl_m,
+                gwl_residual_m,
                 source_file if source_file else "",
             ),
         )
 
     print(f"Copied {len(temp_reports)} SPT reports from {source_name} database")
-    return borehole_id_mapping
+    return spt_id_mapping
 
 
 def copy_spt_measurements(
     temp_conn: sqlite3.Connection,
     main_conn: sqlite3.Connection,
-    borehole_id_mapping: dict[int, int],
+    spt_id_mapping: dict[int, int],
     source_name: str,
 ):
     """Copy SPT measurements from temporary database to main database.
@@ -128,36 +124,36 @@ def copy_spt_measurements(
         Connection to the temporary database.
     main_conn : sqlite3.Connection
         Connection to the main database.
-    borehole_id_mapping : dict[int, int]
-        Mapping from original borehole_id to new borehole_id.
+    spt_id_mapping : dict[int, int]
+        Mapping from original spt_id to new spt_id.
     source_name : str
         Name of the source for logging.
     """
     temp_cursor = temp_conn.cursor()
     main_cursor = main_conn.cursor()
 
-    # Get the next available measurement_id in main database
-    main_cursor.execute("SELECT MAX(measurement_id) FROM sptmeasurements")
+    # Get the next available spt_measurement_id in main database
+    main_cursor.execute("SELECT MAX(spt_measurement_id) FROM sptmeasurements")
     result = main_cursor.fetchone()
     next_measurement_id = (result[0] + 1) if result[0] is not None else 1
 
     # Get all SPT measurements from temporary database
-    temp_cursor.execute("SELECT borehole_id, depth, n FROM sptmeasurements")
+    temp_cursor.execute("SELECT spt_id, depth_m, n FROM sptmeasurements")
     temp_measurements = temp_cursor.fetchall()
 
     for temp_measurement in temp_measurements:
-        original_borehole_id, depth, n = temp_measurement
+        original_spt_id, depth_m, n = temp_measurement
 
-        if original_borehole_id in borehole_id_mapping:
-            new_borehole_id = borehole_id_mapping[original_borehole_id]
+        if original_spt_id in spt_id_mapping:
+            new_spt_id = spt_id_mapping[original_spt_id]
 
-            # Insert into main database with new measurement_id
+            # Insert into main database with new spt_measurement_id
             main_cursor.execute(
                 """
-                INSERT INTO sptmeasurements (measurement_id, borehole_id, depth, n)
+                INSERT INTO sptmeasurements (spt_measurement_id, spt_id, depth_m, n)
                 VALUES (?, ?, ?, ?)
             """,
-                (next_measurement_id, new_borehole_id, depth, n),
+                (next_measurement_id, new_spt_id, depth_m, n),
             )
             next_measurement_id += 1
 
@@ -169,13 +165,13 @@ def copy_spt_measurements(
 def copy_soil_measurements_and_types(
     temp_conn: sqlite3.Connection,
     main_conn: sqlite3.Connection,
-    borehole_id_mapping: dict[int, int],
+    spt_id_mapping: dict[int, int],
     source_name: str,
 ):
     """Copy soil measurements and their associated soil types from temporary database to main database.
 
     This function combines the copying of soil measurements and soil measurement soil types
-    to ensure the same measurement_id is used in both tables.
+    to ensure the same soil_measurement_id is used in both tables.
 
     Parameters
     ----------
@@ -183,22 +179,22 @@ def copy_soil_measurements_and_types(
         Connection to the temporary database.
     main_conn : sqlite3.Connection
         Connection to the main database.
-    borehole_id_mapping : dict[int, int]
-        Mapping from original borehole_id to new borehole_id.
+    spt_id_mapping : dict[int, int]
+        Mapping from original spt_id to new spt_id.
     source_name : str
         Name of the source for logging.
     """
     temp_cursor = temp_conn.cursor()
     main_cursor = main_conn.cursor()
 
-    # Get the next available measurement_id in main database
-    main_cursor.execute("SELECT MAX(measurement_id) FROM soilmeasurements")
+    # Get the next available soil_measurement_id in main database
+    main_cursor.execute("SELECT MAX(soil_measurement_id) FROM soilmeasurements")
     result = main_cursor.fetchone()
     next_measurement_id = (result[0] + 1) if result[0] is not None else 1
 
     # Get all soil measurements from temporary database
     temp_cursor.execute(
-        "SELECT measurement_id, report_id, top_depth FROM soilmeasurements"
+        "SELECT soil_measurement_id, spt_id, top_depth_m FROM soilmeasurements"
     )
     temp_soil_measurements = temp_cursor.fetchall()
 
@@ -208,10 +204,10 @@ def copy_soil_measurements_and_types(
     )
     temp_soil_types = temp_cursor.fetchall()
 
-    # Create mapping from original measurement_id to (report_id, top_depth)
+    # Create mapping from original soil_measurement_id to (spt_id, top_depth_m)
     temp_measurement_map = {row[0]: (row[1], row[2]) for row in temp_soil_measurements}
 
-    # Create mapping from original measurement_id to list of soil_type_ids
+    # Create mapping from original soil_measurement_id to list of soil_type_ids
     temp_measurement_soil_types = {}
     for row in temp_soil_types:
         original_measurement_id = row[0]
@@ -220,30 +216,30 @@ def copy_soil_measurements_and_types(
             temp_measurement_soil_types[original_measurement_id] = []
         temp_measurement_soil_types[original_measurement_id].append(soil_type_id)
 
-    # Mapping from original measurement_id to new measurement_id
+    # Mapping from original soil_measurement_id to new soil_measurement_id
     measurement_id_mapping = {}
 
-    # Copy soil measurements and track the measurement_id mapping
+    # Copy soil measurements and track the soil_measurement_id mapping
     for original_measurement_id, (
-        original_borehole_id,
-        top_depth,
+        original_spt_id,
+        top_depth_m,
     ) in temp_measurement_map.items():
-        if original_borehole_id in borehole_id_mapping:
-            new_borehole_id = borehole_id_mapping[original_borehole_id]
+        if original_spt_id in spt_id_mapping:
+            new_spt_id = spt_id_mapping[original_spt_id]
 
-            # Insert into main database with new measurement_id
+            # Insert into main database with new soil_measurement_id
             main_cursor.execute(
                 """
-                INSERT INTO soilmeasurements (measurement_id, report_id, top_depth)
+                INSERT INTO soilmeasurements (soil_measurement_id, spt_id, top_depth_m)
                 VALUES (?, ?, ?)
             """,
-                (next_measurement_id, new_borehole_id, top_depth),
+                (next_measurement_id, new_spt_id, top_depth_m),
             )
 
             # Store the mapping
             measurement_id_mapping[original_measurement_id] = next_measurement_id
 
-            # Copy associated soil types using the same measurement_id
+            # Copy associated soil types using the same soil_measurement_id
             if original_measurement_id in temp_measurement_soil_types:
                 for soil_type_id in temp_measurement_soil_types[
                     original_measurement_id
@@ -286,13 +282,13 @@ def copy_spt_data_from_temp_db(
     with sqlite3.connect(str(temp_db_path)) as temp_conn:
         print(f"Copying SPT data from {source_name} database...")
 
-        # Copy SPT reports and get borehole_id mapping
-        borehole_id_mapping = copy_spt_reports(temp_conn, main_conn, source_name)
+        # Copy SPT reports and get spt_id mapping
+        spt_id_mapping = copy_spt_reports(temp_conn, main_conn, source_name)
 
         # Copy related data using the mapping
-        copy_spt_measurements(temp_conn, main_conn, borehole_id_mapping, source_name)
+        copy_spt_measurements(temp_conn, main_conn, spt_id_mapping, source_name)
         copy_soil_measurements_and_types(
-            temp_conn, main_conn, borehole_id_mapping, source_name
+            temp_conn, main_conn, spt_id_mapping, source_name
         )
 
 

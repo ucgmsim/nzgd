@@ -12,7 +12,7 @@ from nzgd.db import orm
 
 def initialize_database_at_path(db_path: Path):
     """Initialize a database at the specified path with all required tables.
-    
+
     Parameters
     ----------
     db_path : Path
@@ -20,45 +20,48 @@ def initialize_database_at_path(db_path: Path):
     """
     # Create the database file if it doesn't exist
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Create a temporary database connection for initialization
     temp_db = sqlite3.connect(str(db_path))
-    
+
     # Create all tables using the ORM models
     # We need to temporarily change the database path in the ORM
     original_db_path = orm.db.database
     orm.db.init(str(db_path))
-    
+
     try:
         with orm.db:
-            orm.db.create_tables([
-                orm.Type,
-                orm.Region,
-                orm.District,
-                orm.City,
-                orm.Suburb,
-                orm.CPTToVsCorrelation,
-                orm.SPTToVsCorrelation,
-                orm.VsToVs30Correlation,
-                orm.SPTToVs30HammerType,
-                orm.TerminationReason,
-                orm.CPTGroundWaterLevelMethod,
-                orm.SoilTypes,
-                orm.NZGDRecord,
-                orm.SPTReport,
-                orm.SoilMeasurements,
-                orm.SoilMeasurementSoilType,
-                orm.SPTMeasurements,
-                orm.CPTReport,
-                orm.CPTMeasurements,
-                orm.CPTVs30Estimates,
-                orm.SPTVs30Estimates,
-            ])
+            orm.db.create_tables(
+                [
+                    orm.Type,
+                    orm.Region,
+                    orm.District,
+                    orm.City,
+                    orm.Suburb,
+                    orm.CPTToVsCorrelation,
+                    orm.SPTToVsCorrelation,
+                    orm.VsToVs30Correlation,
+                    orm.SPTToVs30HammerType,
+                    orm.TerminationReason,
+                    orm.CPTGroundWaterLevelMethod,
+                    orm.SoilTypes,
+                    orm.NZGDRecord,
+                    orm.SPTReport,
+                    orm.SoilMeasurements,
+                    orm.SoilMeasurementSoilType,
+                    orm.SPTMeasurements,
+                    orm.CPTReport,
+                    orm.CPTMeasurements,
+                    orm.CPTVs30Estimates,
+                    orm.SPTVs30Estimates,
+                ]
+            )
     finally:
         # Restore the original database path
         orm.db.init(original_db_path)
-    
+
     temp_db.close()
+
 
 def serialize_correlation_tables(conn: sqlite3.Connection):
     """Serialize correlation strings to the SQLite database.
@@ -185,7 +188,7 @@ def serialize_spt_soil_type_table(
     ):
         cursor.execute(
             """
-            INSERT OR REPLACE INTO soiltypes (id, name)
+            INSERT OR REPLACE INTO soiltypes (id, value)
             VALUES (?, ?)
         """,
             (value_id, value),
@@ -311,7 +314,7 @@ def serialize_location_name_tables(metadata_df: pd.DataFrame, conn: sqlite3.Conn
 
 def populate_database(db_path: Path, metadata_df: pd.DataFrame):
     """Populate a database with support tables and metadata.
-    
+
     Parameters
     ----------
     db_path : Path
@@ -320,7 +323,7 @@ def populate_database(db_path: Path, metadata_df: pd.DataFrame):
         The metadata DataFrame containing location information.
     """
     print(f"Populating database at {db_path}")
-    
+
     with sqlite3.connect(str(db_path)) as db:
         # needs to be in the db for Jake's SPT mining code to work
         serialize_spt_soil_type_table(db)
@@ -334,6 +337,7 @@ def populate_database(db_path: Path, metadata_df: pd.DataFrame):
         serialize_investigation_type_table(db)
 
         serialize_location_name_tables(metadata_df, db)
+
 
 if __name__ == "__main__":
     metadata_from_location_coordinates = pd.read_csv(
@@ -351,9 +355,9 @@ if __name__ == "__main__":
     for db_path in database_paths:
         print(f"Creating database at {db_path}")
         initialize_database_at_path(db_path)
-    
+
     print("Populating databases with support tables...")
     for db_path in database_paths:
         populate_database(db_path, metadata_from_location_coordinates)
-    
+
     print("Database creation and population completed successfully!")

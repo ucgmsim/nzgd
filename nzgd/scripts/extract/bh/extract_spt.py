@@ -1,13 +1,13 @@
 """A simple script to run Jake Faulkner's borehole data extraction code."""
 
-import sqlite3
-
 import pandas as pd
 
 from nzgd import constants
 from nzgd.extract.bh import ags_miner, miner
 
-nzgd_index_df = pd.read_csv(constants.INDEX_FILE_PATH, low_memory=False) # low_memory=False prevents warnings about columns of mixed data types 
+nzgd_index_df = pd.read_csv(
+    constants.INDEX_FILE_PATH, low_memory=False
+)  # low_memory=False prevents warnings about columns of mixed data types
 
 nzgd_index_df = nzgd_index_df[
     nzgd_index_df["TypeDisplay"].isin(constants.NZGD_TypeDisplay_VALUES_FOR_BOREHOLES)
@@ -27,4 +27,3 @@ for nzgd_id in nzgd_index_df["nzgd_id"]:
 
 ags_miner.mine_borehole_log(ags_files, constants.TEMP_SPT_AGS_DB_PATH)
 miner.mine_borehole_log(pdf_files, constants.TEMP_SPT_PDF_DB_PATH)
-

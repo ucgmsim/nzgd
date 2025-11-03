@@ -1,7 +1,6 @@
 """Put borehole groundwater levels extracted from AGS files into the database."""
 
 import sqlite3
-from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
@@ -42,7 +41,7 @@ def serialize_spt_gwl_data(
         cursor.execute(
             """
             UPDATE sptreport
-            SET extracted_gwl = ?, gwl_residual = ?
+            SET extracted_gwl_m = ?, gwl_residual_m = ?
             WHERE nzgd_id = ?
             """,
             (row["extracted_gwl"], row["gwl_residual"], row["nzgd_id"]),

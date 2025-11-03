@@ -127,8 +127,8 @@ def serialize_cpt_reports(
         cursor.execute(
             """
             INSERT OR REPLACE INTO cptreport (
-                cpt_id, nzgd_id, max_depth, min_depth, extracted_gwl, gwl_method_id, gwl_residual,
-                tip_net_area_ratio, predrill_depth, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
+                cpt_id, nzgd_id, max_depth_m, min_depth_m, extracted_gwl_m, gwl_method_id, gwl_residual_m,
+                tip_net_area_ratio, predrill_depth_m, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
                 did_explicit_unit_conversion, did_inferred_unit_conversion, source_file
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -200,7 +200,7 @@ def serialize_cpt_data_arrays(
                     cursor.execute(
                         """
                         INSERT OR REPLACE INTO cptmeasurements (
-                            measurement_id, cpt_id, depth, qc, fs, u2
+                            measurement_id, cpt_id, depth_m, qc_MPa, fs_MPa, u2_MPa
                         )
                         VALUES (?, ?, ?, ?, ?, ?)
                         """,

@@ -147,7 +147,7 @@ class SoilTypes(BaseModel):
     id = IntegerField(primary_key=True)
     """int: The unique identifier for the soil type."""
 
-    name = TextField()
+    value = TextField()
     """str: The name of the soil type."""
 
 
@@ -215,7 +215,7 @@ class NZGDRecord(BaseModel):
 class SPTReport(BaseModel):
     """Represents a Standard Penetration Test (SPT) report."""
 
-    borehole_id = IntegerField(primary_key=True)
+    spt_id = IntegerField(primary_key=True)
     """int: The unique identifier for the borehole."""
 
     nzgd_id = ForeignKeyField(NZGDRecord, backref="spt_reports")
@@ -224,10 +224,10 @@ class SPTReport(BaseModel):
     efficiency = FloatField(null=True)
     """float: The efficiency of the test."""
 
-    extracted_gwl = FloatField(null=True)
+    extracted_gwl_m = FloatField(null=True)
     """float: The extracted ground water level for the SPT (borehole) report."""
 
-    gwl_residual = FloatField(null=True)
+    gwl_residual_m = FloatField(null=True)
     """float: The residual (difference) between the extracted ground water level and
     the corresponding value from the Westerhoff et al. (2018) national groundwater
     level model."""
@@ -239,13 +239,13 @@ class SPTReport(BaseModel):
 class SoilMeasurements(BaseModel):
     """Represents soil measurements."""
 
-    measurement_id = IntegerField(primary_key=True)
+    soil_measurement_id = IntegerField(primary_key=True)
     """int: The unique identifier for the soil measurement."""
 
-    report_id = ForeignKeyField(SPTReport, backref="soil_measurements")
+    spt_id = ForeignKeyField(SPTReport, backref="soil_measurements")
     """int: The foreign key referencing the associated SPT report."""
 
-    top_depth = FloatField()
+    top_depth_m = FloatField()
     """float: The top depth of the soil layer."""
 
 
@@ -265,13 +265,13 @@ class SoilMeasurementSoilType(BaseModel):
 class SPTMeasurements(BaseModel):
     """Represents measurements for a Standard Penetration Test (SPT)."""
 
-    measurement_id = IntegerField(primary_key=True)
+    spt_measurement_id = IntegerField(primary_key=True)
     """int: The unique identifier for the measurement."""
 
-    borehole_id = ForeignKeyField(SPTReport, backref="measurements")
+    spt_id = ForeignKeyField(SPTReport, backref="measurements")
     """int: The foreign key referencing the associated SPT report."""
 
-    depth = FloatField(null=True)
+    depth_m = FloatField(null=True)
     """float: The depth at which the measurement was taken."""
 
     n = IntegerField(null=True)
@@ -287,13 +287,13 @@ class CPTReport(BaseModel):
     nzgd_id = ForeignKeyField(NZGDRecord, backref="cpt_reports")
     """int: The foreign key referencing the associated NZGD record."""
 
-    max_depth = FloatField(null=True)
+    max_depth_m = FloatField(null=True)
     """float: The maximum depth of the CPT report"""
 
-    min_depth = FloatField(null=True)
+    min_depth_m = FloatField(null=True)
     """"float: The minimum depth of the CPT report"""
 
-    extracted_gwl = FloatField(null=True)
+    extracted_gwl_m = FloatField(null=True)
     """float: The extracted ground water level for the CPT report."""
 
     gwl_method_id = ForeignKeyField(
@@ -302,7 +302,7 @@ class CPTReport(BaseModel):
     )
     """int: The foreign key referencing the ground water level method."""
 
-    gwl_residual = FloatField(null=True)
+    gwl_residual_m = FloatField(null=True)
     """float: The residual (difference) between the extracted ground water level and
     the corresponding value from the Westerhoff et al. (2018) national groundwater
     level model."""
@@ -310,7 +310,7 @@ class CPTReport(BaseModel):
     tip_net_area_ratio = FloatField(null=True)
     """float: The tip net area ratio of the CPT."""
 
-    predrill_depth = FloatField(null=True)
+    predrill_depth_m = FloatField(null=True)
     """float: The pre-drill depth of the CPT."""
 
     termination_reason_id = ForeignKeyField(
@@ -354,16 +354,16 @@ class CPTMeasurements(BaseModel):
     cpt_id = ForeignKeyField(CPTReport, backref="measurements")
     """int: The foreign key referencing the associated CPT report."""
 
-    depth = FloatField(null=True)
+    depth_m = FloatField(null=True)
     """float: The depth at which the measurement was taken."""
 
-    qc = FloatField(null=True)
+    qc_MPa = FloatField(null=True)
     """float: The cone resistance at the specified depth."""
 
-    fs = FloatField(null=True)
+    fs_MPa = FloatField(null=True)
     """float: The sleeve friction at the specified depth."""
 
-    u2 = FloatField(null=True)
+    u2_MPa = FloatField(null=True)
     """float: The pore water pressure at the specified depth."""
 
 
@@ -414,7 +414,7 @@ class SPTVs30Estimates(BaseModel):
     vs30_id = IntegerField(primary_key=True)
     """int: The unique identifier for the Vs30 estimate."""
 
-    borehole_id = ForeignKeyField(SPTReport, backref="vs30_estimates")
+    spt_id = ForeignKeyField(SPTReport, backref="vs30_estimates")
     """int: The foreign key referencing the associated borehole_id."""
 
     spt_to_vs_correlation_id = ForeignKeyField(
@@ -429,7 +429,7 @@ class SPTVs30Estimates(BaseModel):
     )
     """int: The foreign key referencing the Vs to Vs30 correlation."""
 
-    assumed_borehole_diameter = FloatField(null=True)
+    assumed_borehole_diameter_mm = FloatField(null=True)
     """float: The assumed diameter of the borehole."""
 
     assumed_hammer_type_id = ForeignKeyField(SPTToVs30HammerType, backref="hammer_type")
