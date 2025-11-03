@@ -66,8 +66,8 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage, PDFTextExtractionNotAllowed
 from pdfminer.pdfparser import PDFParser
 
-from nzgd.extract.bh.data_structures import SPTReport, TextObject
 from nzgd.constants import SOIL_TYPE_TO_ID
+from nzgd.extract.bh.data_structures import SPTReport, TextObject
 
 # Initialize Typer app
 app = typer.Typer()
@@ -91,7 +91,7 @@ def extract_soil_report(description: str) -> set[str]:
 
     """
     soil_types = set(SOIL_TYPE_TO_ID.keys())
-    return soil_types & {word.strip(",.;") for word in description.split()}
+    return soil_types & {word.strip(",.;").upper() for word in description.split()}
 
 
 def extract_spt_value(text: str) -> int | None:
@@ -171,6 +171,7 @@ def is_valid_depth_measurement(text: str, max_depth_cutoff: float = 60) -> bool:
         return 0 <= x <= max_depth_cutoff
     except ValueError:
         return False
+
 
 def process_borehole(report: Path, borehole_id: int) -> SPTReport:
     """Process a borehole report to extract SPT values and soil types.
@@ -474,7 +475,9 @@ def _analyze_text_objects(
                 )
     # Create SPT DataFrame, handling empty case
     if not spt_values:
-        warnings.warn(f"No SPT values found in {report}, creating empty SPT measurements")
+        warnings.warn(
+            f"No SPT values found in {report}, creating empty SPT measurements"
+        )
         df = pd.DataFrame(columns=["Depth", "N"])
     else:
         df = pd.DataFrame(spt_values)
@@ -492,9 +495,11 @@ def _analyze_text_objects(
     has_spt_data = not df.empty
     has_soil_data = not soil_measurements.empty
     has_efficiency = hammer_efficiency is not None
-    
+
     if not (has_spt_data or has_soil_data or has_efficiency):
-        raise ValueError(f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found")
+        raise ValueError(
+            f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found"
+        )
 
     return SPTReport(
         borehole_id=borehole_id,
@@ -507,7 +512,9 @@ def _analyze_text_objects(
     )
 
 
-def process_borehole_no_exceptions(borehole_file_tuple: tuple[int, Path]) -> SPTReport | None:
+def process_borehole_no_exceptions(
+    borehole_file_tuple: tuple[int, Path],
+) -> SPTReport | None:
     """Process a borehole report while suppressing exceptions.
 
     Parameters

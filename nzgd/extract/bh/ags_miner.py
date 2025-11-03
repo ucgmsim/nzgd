@@ -59,8 +59,8 @@ import tqdm
 import typer
 from python_ags4 import AGS4
 
-from nzgd.extract.bh.data_structures import SPTReport
 from nzgd.constants import SOIL_TYPE_TO_ID
+from nzgd.extract.bh.data_structures import SPTReport
 
 # Initialize Typer app
 app = typer.Typer()
@@ -84,7 +84,7 @@ def extract_soil_report(description: str) -> set[str]:
 
     """
     soil_types = set(SOIL_TYPE_TO_ID.keys())
-    return soil_types & {word.strip(",.;") for word in description.split()}
+    return soil_types & {word.strip(",.;").upper() for word in description.split()}
 
 
 def process_borehole(borehole_id: int, report: Path) -> SPTReport:
@@ -104,10 +104,10 @@ def process_borehole(borehole_id: int, report: Path) -> SPTReport:
 
     """
     tables, headings = AGS4.AGS4_to_dataframe(report)
-    
+
     # Initialize SPT table with empty DataFrame
     spt_table = pd.DataFrame(columns=["Depth", "N"])
-    
+
     # Try to extract SPT data if ISPT table exists
     if "ISPT" in tables:
         spt_table = (
@@ -118,11 +118,13 @@ def process_borehole(borehole_id: int, report: Path) -> SPTReport:
         # If all N values are empty, create empty DataFrame with NaN values
         if spt_table["N"].eq("").all():
             spt_table = pd.DataFrame(columns=["Depth", "N"])
-            warnings.warn(f"No SPT N values found in {report}, creating empty SPT measurements")
+            warnings.warn(
+                f"No SPT N values found in {report}, creating empty SPT measurements"
+            )
 
     # Initialize geology table
     geology_table = pd.DataFrame(columns=["top_depth", "soil_types"])
-    
+
     # Try to extract geology data if GEOL table exists
     if "GEOL" in tables and tables.get("GEOL") is not None:
         geology_table = (
@@ -165,9 +167,11 @@ def process_borehole(borehole_id: int, report: Path) -> SPTReport:
     has_spt_data = not spt_table.empty and not spt_table["N"].eq("").all()
     has_soil_data = not geology_table.empty
     has_efficiency = efficiency is not None
-    
+
     if not (has_spt_data or has_soil_data or has_efficiency):
-        raise ValueError(f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found")
+        raise ValueError(
+            f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found"
+        )
 
     return SPTReport(
         borehole_id=borehole_id,
@@ -184,7 +188,9 @@ RATIO_RE = re.compile(r"(\d{1,3}(\.\d+)?)\s*%")
 LABEL_RE = re.compile(r"\b(ratio|efficien(t|cy)|hammer\s+energy)\b", re.IGNORECASE)
 
 
-def process_borehole_no_exceptions(borehole_file_tuple: tuple[int, Path]) -> SPTReport | None:
+def process_borehole_no_exceptions(
+    borehole_file_tuple: tuple[int, Path],
+) -> SPTReport | None:
     """Process a borehole report while suppressing exceptions.
 
     Parameters
