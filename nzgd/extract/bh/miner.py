@@ -120,10 +120,12 @@ def extract_spt_value(text: str) -> int | None:
     """
     # Searches for "N" as a whole word (e.g., not part of another word
     # like "Nail"), followed by "=" or ">", and a number, allowing
-    # spaces between.
-    # Valid match: "N = 42" or "N>50"
-    # Invalid match: "Northing=42" or "NN = 50"
+    # spaces between. If no match is found, tries the same pattern with "S".
+    # Valid match: "N = 42", "N>50", "S = 42", or "S>50"
+    # Invalid match: "Northing=42", "NN = 50", or "South=42"
     if match := re.search(r"\bNc?\s*(=|\>)\s*(\d+)", text):
+        return int(match.group(2))
+    if match := re.search(r"\bSc?\s*(=|\>)\s*(\d+)", text):
         return int(match.group(2))
     return None
 
