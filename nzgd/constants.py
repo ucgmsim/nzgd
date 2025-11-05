@@ -300,11 +300,19 @@ NUMERICAL_VALUES_REGEX = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
 MAX_ALLOWED_GWL = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_gwl"]
 MIN_ALLOWED_GWL = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_gwl"]
 
-MAX_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_predrill_depth"]
-MIN_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_predrill_depth"]
+MAX_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"][
+    "max_allowed_predrill_depth"
+]
+MIN_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"][
+    "min_allowed_predrill_depth"
+]
 
-MAX_ALLOWED_TIP_NET_AREA_RATIO = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_tip_net_area_ratio"]
-MIN_ALLOWED_TIP_NET_AREA_RATIO = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_tip_net_area_ratio"]
+MAX_ALLOWED_TIP_NET_AREA_RATIO = CONFIG["allowed_bounds_for_extracted_values"][
+    "max_allowed_tip_net_area_ratio"
+]
+MIN_ALLOWED_TIP_NET_AREA_RATIO = CONFIG["allowed_bounds_for_extracted_values"][
+    "min_allowed_tip_net_area_ratio"
+]
 
 gwl__not_measured_terms = [
     "no",
@@ -600,7 +608,7 @@ SOIL_TYPE_TO_ID = {
     "GRAVEL": 8,
     "PEAT": 9,
     "SAND": 10,
-    "SANDSTONE": 10,
+    "SANDSTONE": 11,
     "SILT": 12,
     "SILTSTONE": 13,
     "TOPSOIL": 14,
@@ -631,10 +639,8 @@ CPT_TO_VS_CORRELATION_TO_ID = {
 }
 
 SPT_TO_VS_CORRELATION_TO_ID = {
-    "brandenberg_2010_using_bad_effective_stress": 1,
-    "kwak_2015_using_bad_effective_stress": 2,
-    "brandenberg_2010_layered_effective_stress": 3,
-    "kwak_2015_layered_effective_stress": 4,
+    "brandenberg_2010": 1,
+    "kwak_2015": 2,
 }
 
 # Correlation mappings for CPT and Vs30 correlations
@@ -658,7 +664,9 @@ HAMMER_TYPE_TO_ID = {
 DEFAULT_GROUNDWATER_LEVEL_m = CONFIG["default_groundwater_level_m"]
 DEFAULT_SPT_EFFICIENCY_PERCENT = CONFIG["default_spt_efficiency_percent"]
 DEFAULT_BOREHOLE_DIAMETER_mm = CONFIG["default_borehole_diameter_mm"]
-BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m = CONFIG["buffer_below_lowest_measurement_depth_m"]
+BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m = CONFIG[
+    "buffer_below_lowest_measurement_depth_m"
+]
 
 WATER_UNIT_WEIGHT_kN_m3 = 9.81
 

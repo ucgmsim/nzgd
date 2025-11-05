@@ -156,6 +156,91 @@ hammer_types = [vs_calc.constants.HammerType.Auto]  # ,
 
 assumed_borehole_diameter = constants.DEFAULT_BOREHOLE_DIAMETER_mm
 
+
+def get_sptmeasurements_for_nzgd_ids(
+    conn: sqlite3.Connection, nzgd_ids: list[int]
+) -> pd.DataFrame:
+    """Get SPT measurements for a list of nzgd_ids.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Database connection
+    nzgd_ids : list[int]
+        List of nzgd_id values to query
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing SPT measurements for the specified nzgd_ids
+    """
+    if not nzgd_ids:
+        return pd.DataFrame()
+
+    placeholders = ",".join("?" * len(nzgd_ids))
+    query = f"""
+        SELECT m.*, r.nzgd_id 
+        FROM sptmeasurements m
+        INNER JOIN sptreport r ON m.spt_id = r.spt_id
+        WHERE r.nzgd_id IN ({placeholders})
+        ORDER BY m.spt_id, m.depth_m ASC
+    """
+    return pd.read_sql_query(query, conn, params=tuple(nzgd_ids))
+
+
+def get_sptmeasurements_for_all_nzgd_ids(conn: sqlite3.Connection) -> pd.DataFrame:
+    """Get SPT measurements for all nzgd_ids.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Database connection
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing SPT measurements for all nzgd_ids
+    """
+    query = """
+        SELECT r.nzgd_id, m.spt_id, m.depth_m, m.n, r.source_file
+        FROM sptmeasurements m
+        INNER JOIN sptreport r ON m.spt_id = r.spt_id
+        ORDER BY r.nzgd_id, m.spt_id, m.depth_m ASC
+    """
+    return pd.read_sql_query(query, conn)
+
+
+def get_soil_measurements_for_all_nzgd_ids(conn: sqlite3.Connection) -> pd.DataFrame:
+    """Get soil measurements for all nzgd_ids.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Database connection
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing soil measurements for all nzgd_ids
+    """
+    query = """
+        SELECT 
+            r.nzgd_id,
+            sm.soil_measurement_id,
+            sm.spt_id as spt_id,
+            sm.top_depth_m,
+            st.id as soil_type_id,
+            st.value as soil_type_name,
+            r.source_file
+        FROM soilmeasurements sm
+        INNER JOIN sptreport r ON sm.spt_id = r.spt_id
+        INNER JOIN soilmeasurementsoiltype smst ON sm.soil_measurement_id = smst.soil_measurement_id
+        INNER JOIN soiltypes st ON smst.soil_type_id = st.id
+        ORDER BY r.nzgd_id, sm.spt_id, sm.top_depth_m ASC
+    """
+    return pd.read_sql_query(query, conn)
+
+
 conn = sqlite3.connect(constants.OUTPUT_DB_PATH)
 nzgd_ids = (
     pd.read_sql_query(
@@ -172,7 +257,8 @@ spt_vs30_data = []
 
 progress_bar = tqdm(total=len(nzgd_ids))
 
-for nzgd_id in nzgd_ids:
+# for nzgd_id in nzgd_ids:
+for nzgd_id in [129646]:
     progress_bar.update()
 
     sptreport_df = pd.read_sql_query(
@@ -337,90 +423,75 @@ for nzgd_id in nzgd_ids:
 
         # Process with each correlation combination
         for spt_vs_correlation_name in spt_vs_correlations:
-            # Determine if this is a layered correlation
-            is_layered = "layered" in spt_vs_correlation_name
+            for vs30_correlation in vs30_correlations:
+                for hammer_type in hammer_types:
+                    # Use DataFrame layers for layered correlations - only include required columns
 
-            # For non-layered: run with and without soil info
-            # For layered: only run with soil info (always use layers + soil types)
-            use_soil_info_values = (
-                [True] if is_layered else [True, False] if has_soil_data else [False]
-            )
+                    layers = layers_df[
+                        [
+                            "layer_thickness_m",
+                            "unsaturated_unit_weight_kN/m3",
+                            "saturated_unit_weight_kN/m3",
+                        ]
+                    ].copy()
 
-            for use_soil_info in use_soil_info_values:
-                # Skip if trying to use soil info but don't have soil data
-                if use_soil_info and not has_soil_data:
-                    continue
-                for vs30_correlation in vs30_correlations:
-                    for hammer_type in hammer_types:
-                        # Use DataFrame layers for layered correlations - only include required columns
-                        if is_layered and has_soil_data:
-                            layers = layers_df[
-                                [
-                                    "layer_thickness_m",
-                                    "unsaturated_unit_weight_kN/m3",
-                                    "saturated_unit_weight_kN/m3",
-                                ]
-                            ].copy()
-                        else:
-                            layers = None
+                    # Create SPT object
+                    spt = vs_calc.SPT(
+                        name=str(spt_id),
+                        depth=measurements_df["depth_m"].to_numpy(),
+                        n=measurements_df["n"].to_numpy(),
+                        hammer_type=hammer_type,
+                        borehole_diameter=assumed_borehole_diameter,
+                        layers=layers,
+                        groundwater_level=extracted_gwl_for_bh_id,
+                    )
 
-                        # Create SPT object
-                        spt = vs_calc.SPT(
-                            name=str(spt_id),
-                            depth=measurements_df["depth_m"].to_numpy(),
-                            n=measurements_df["n"].to_numpy(),
-                            hammer_type=hammer_type,
-                            borehole_diameter=assumed_borehole_diameter,
-                            layers=layers,
-                            groundwater_level=extracted_gwl_for_bh_id,
+                    # Set soil types if using soil info
+                    if has_soil_data:
+                        spt.soil_type = soil_types_array
+                    # Otherwise, leave as default (all Clay)
+
+                    # Set efficiency if available
+                    if efficiency_for_bh_id is not None:
+                        energy_ratio = efficiency_for_bh_id / 100
+                        spt.energy_ratio = energy_ratio
+                        used_efficiency = True
+                    else:
+                        used_efficiency = False
+
+                    # Calculate Vs profile and Vs30
+                    try:
+                        spt_vs_profile = vs_calc.VsProfile.from_spt(
+                            spt, spt_vs_correlation_name
                         )
+                        spt_vs_profile.vs30_correlation = vs30_correlation
+                        vs30 = spt_vs_profile.vs30
+                        vs30_sd = spt_vs_profile.vs30_sd
+                        error = np.nan
+                    except Exception as e:
+                        vs30 = np.nan
+                        vs30_sd = np.nan
+                        error = e
 
-                        # Set soil types if using soil info
-                        if use_soil_info:
-                            spt.soil_type = soil_types_array
-                        # Otherwise, leave as default (all Clay)
-
-                        # Set efficiency if available
-                        if efficiency_for_bh_id is not None:
-                            energy_ratio = efficiency_for_bh_id / 100
-                            spt.energy_ratio = energy_ratio
-                            used_efficiency = True
-                        else:
-                            used_efficiency = False
-
-                        # Calculate Vs profile and Vs30
-                        try:
-                            spt_vs_profile = vs_calc.VsProfile.from_spt(
-                                spt, spt_vs_correlation_name
+                    # Store results if successful
+                    if not isinstance(error, Exception):
+                        spt_vs30_data.append(
+                            (
+                                spt_id,
+                                constants.SPT_TO_VS_CORRELATION_TO_ID[
+                                    spt_vs_correlation_name
+                                ],
+                                constants.VS_TO_VS30_CORRELATION_TO_ID[
+                                    vs30_correlation
+                                ],
+                                assumed_borehole_diameter,
+                                constants.HAMMER_TYPE_TO_ID[hammer_type.name],
+                                int(used_efficiency),
+                                int(has_soil_data),
+                                vs30,
+                                vs30_sd,
                             )
-                            spt_vs_profile.vs30_correlation = vs30_correlation
-                            vs30 = spt_vs_profile.vs30
-                            vs30_sd = spt_vs_profile.vs30_sd
-                            error = np.nan
-                        except Exception as e:
-                            vs30 = np.nan
-                            vs30_sd = np.nan
-                            error = e
-
-                        # Store results if successful
-                        if not isinstance(error, Exception):
-                            spt_vs30_data.append(
-                                (
-                                    spt_id,
-                                    constants.SPT_TO_VS_CORRELATION_TO_ID[
-                                        spt_vs_correlation_name
-                                    ],
-                                    constants.VS_TO_VS30_CORRELATION_TO_ID[
-                                        vs30_correlation
-                                    ],
-                                    assumed_borehole_diameter,
-                                    constants.HAMMER_TYPE_TO_ID[hammer_type.name],
-                                    int(used_efficiency),
-                                    int(use_soil_info),
-                                    vs30,
-                                    vs30_sd,
-                                )
-                            )
+                        )
 
 progress_bar.close()
 conn.close()
