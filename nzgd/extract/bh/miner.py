@@ -66,42 +66,13 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage, PDFTextExtractionNotAllowed
 from pdfminer.pdfparser import PDFParser
 
-from nzgd.constants import SOIL_TYPE_TO_ID
-from nzgd.extract.bh.data_structures import SPTReport, TextObject
+from nzgd.extract.bh.utils import SPTReport, TextObject, extract_soil_report
 
 # Initialize Typer app
 app = typer.Typer()
 
 # Configure warnings
 warnings.simplefilter("error", np.exceptions.RankWarning)
-
-
-def extract_soil_report(description: str) -> set[str]:
-    """Extract soil types mentioned in a description.
-
-    Parameters
-    ----------
-    description : str
-        The input text to search for soil types.
-
-    Returns
-    -------
-    set[str]
-        A set of identified soil types from the input.
-
-    """
-    soil_types = set(SOIL_TYPE_TO_ID.keys())
-
-    # Initially try to find soil types that are already written in upper case
-    found_soil_types = soil_types & {word.strip(",.;") for word in description.split()}
-
-    # If no soil types were found, try to find soil types that are written in lower case
-    if len(found_soil_types) == 0:
-        found_soil_types = soil_types & {
-            word.strip(",.;").upper() for word in description.split()
-        }
-
-    return found_soil_types
 
 
 def extract_spt_value(text: str) -> int | None:

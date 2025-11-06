@@ -5,6 +5,27 @@ from pathlib import Path
 
 import pandas as pd
 
+from nzgd.constants import SOIL_TYPE_TO_ID
+
+
+def extract_soil_report(description: str) -> set[str]:
+    """Extract soil types mentioned in a description.
+
+    Parameters
+    ----------
+    description : str
+        The input text to search for soil types.
+
+    Returns
+    -------
+    set[str]
+        A set of identified soil types from the input.
+
+    """
+    soil_types = set(SOIL_TYPE_TO_ID.keys())
+
+    return soil_types & {word.strip(",.;") for word in description.split()}
+
 
 @dataclass
 class TextObject:
