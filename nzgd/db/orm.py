@@ -274,8 +274,11 @@ class SPTMeasurements(BaseModel):
     depth_m = FloatField(null=True)
     """float: The depth at which the measurement was taken."""
 
-    n = IntegerField(null=True)
-    """int: The N-value of the measurement."""
+    ISPT_MAIN = IntegerField(null=True)
+    """int: The number of blows extracted from a PDF file or the ISPT_MAIN field of an AGS file."""
+
+    ISPT_NVAL = IntegerField(null=True)
+    """int: The number of blows extracted from the ISPT_NVAL field of an AGS file."""
 
 
 class CPTReport(BaseModel):

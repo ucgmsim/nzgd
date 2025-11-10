@@ -4,10 +4,10 @@ subdirectories:
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p2p5_20251105.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p3p0_20251110.db"
 
-temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p2p5_20251105.db"
-temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p2p5_20251105.db"
+temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p3p0_20251110.db"
+temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p3p0_20251110.db"
 
 all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values.csv"
 cpt_supplemental_values_filename: "cpt_supplemental_values.csv"
@@ -21,7 +21,8 @@ default_spt_efficiency_percent: 75.0
 default_borehole_diameter_mm: 150.0
 buffer_below_lowest_measurement_depth_m: 0.01 # buffer below the lowest measurement depth to ensure the lowest layer is within the lowest layer
 
-nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
+#nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
+nzgd_index_file_name: "only_127920_nzgd_metadata_from_coordinates_22_august_2025.csv"
 
 nzgd_TypeDisplay_values_for_boreholes:
   - "Rotary Cored borehole"

@@ -49,6 +49,7 @@ import multiprocessing
 import re
 import sqlite3
 import warnings
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
@@ -57,8 +58,9 @@ import numpy as np
 import pandas as pd
 import tqdm
 import typer
-from python_ags4 import AGS4
 
+from nzgd.constants import INDEX_FILE_PATH
+from nzgd.extract.bh.ags_parser import load_ags_tables
 from nzgd.extract.bh.utils import SPTReport, extract_soil_report
 
 # Initialize Typer app
@@ -66,6 +68,99 @@ app = typer.Typer()
 
 # Configure warnings
 warnings.simplefilter("error", np.exceptions.RankWarning)
+
+
+@lru_cache(maxsize=1)
+def _load_index_data() -> pd.DataFrame:
+    """Load NZGD index metadata."""
+    try:
+        return pd.read_csv(INDEX_FILE_PATH)
+    except FileNotFoundError:
+        warnings.warn(f"Index file not found at {INDEX_FILE_PATH}")
+    except Exception as exc:
+        warnings.warn(f"Failed to load index file {INDEX_FILE_PATH}: {exc}")
+    return pd.DataFrame(columns=["nzgd_id", "InvestigationId"])
+
+
+def _get_investigation_ids(nzgd_id: int) -> list[str]:
+    """Return potential LOCA_ID values for the provided NZGD id."""
+    index_df = _load_index_data()
+    if index_df.empty or "InvestigationId" not in index_df.columns:
+        return []
+
+    matches = index_df.loc[index_df["nzgd_id"] == nzgd_id, "InvestigationId"]
+    if matches.empty:
+        return []
+
+    value = matches.iloc[0]
+    if pd.isna(value) or value == "":
+        return []
+
+    raw_value = str(value).strip()
+    candidates: list[str] = []
+
+    bracket_ids = re.findall(r"\[([^\]]+)\]", raw_value)
+    candidates.extend(part.strip() for part in bracket_ids if part.strip())
+
+    if raw_value and raw_value not in candidates:
+        candidates.append(raw_value)
+
+    return candidates
+
+
+def _filter_by_investigation(
+    df: pd.DataFrame,
+    investigation_ids: list[str],
+) -> pd.DataFrame:
+    """Filter a table to rows matching the investigation id if needed."""
+    if "LOCA_ID" not in df.columns:
+        return df
+
+    unique_loca_ids = {
+        str(value) for value in df["LOCA_ID"].dropna().unique() if value != ""
+    }
+
+    if len(unique_loca_ids) <= 1:
+        return df
+
+    if not investigation_ids:
+        warnings.warn(
+            "Multiple LOCA_ID values present but no InvestigationId found; "
+            "retaining all rows."
+        )
+        return df
+
+    filtered = df[df["LOCA_ID"].astype(str).isin(investigation_ids)]
+    if filtered.empty:
+        warnings.warn(
+            "InvestigationId(s) %s not found in table; retaining all rows."
+            % ", ".join(investigation_ids)
+        )
+        return df
+
+    return filtered
+
+
+def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
+    """Return the first value in `column` convertible to float."""
+    if df.empty or column not in df.columns:
+        return None
+
+    series = df[column].dropna()
+    for value in series:
+        if value == "" or pd.isna(value):
+            continue
+
+        candidate = value.strip() if isinstance(value, str) else value
+        if candidate == "":
+            continue
+
+        try:
+            return float(candidate)
+        except (TypeError, ValueError):
+            continue
+
+    return None
 
 
 def process_borehole(borehole_id: int, report: Path) -> SPTReport:
@@ -84,68 +179,92 @@ def process_borehole(borehole_id: int, report: Path) -> SPTReport:
         The extracted SPT report.
 
     """
-    tables, headings = AGS4.AGS4_to_dataframe(report)
+    tables, headings = load_ags_tables(report)
+
+    investigation_ids = _get_investigation_ids(borehole_id)
+
+    ispt_columns = [
+        "LOCA_ID",
+        "ISPT_TOP",
+        "ISPT_MAIN",
+        "ISPT_NVAL",
+        "ISPT_WAT",
+        "ISPT_ERAT",
+    ]
+    geology_columns = ["LOCA_ID", "GEOL_TOP", "GEOL_DESC"]
+    desired_ispt_columns = [
+        "LOCA_ID",
+        "Depth",
+        "ISPT_MAIN",
+        "ISPT_NVAL",
+        "ISPT_WAT",
+        "ISPT_ERAT",
+    ]
 
     # Initialize SPT table with empty DataFrame
-    spt_table = pd.DataFrame(columns=["Depth", "N"])
-
+    spt_table = pd.DataFrame(columns=desired_ispt_columns)
     # Try to extract SPT data if ISPT table exists
     if "ISPT" in tables:
-        spt_table = (
-            tables["ISPT"][["ISPT_TOP", "ISPT_MAIN"]]
-            .iloc[2:]
-            .rename(columns={"ISPT_TOP": "Depth", "ISPT_MAIN": "N"})
+        ispt_df = tables["ISPT"].iloc[2:].copy()
+        ispt_df = _filter_by_investigation(ispt_df, investigation_ids)
+        ispt_df = ispt_df.reindex(columns=ispt_columns, fill_value=pd.NA)
+
+        spt_table = ispt_df.rename(columns={"ISPT_TOP": "Depth"}).reindex(
+            columns=desired_ispt_columns, fill_value=pd.NA
         )
         # If all N values are empty, create empty DataFrame with NaN values
-        if spt_table["N"].eq("").all():
-            spt_table = pd.DataFrame(columns=["Depth", "N"])
+        if spt_table["ISPT_MAIN"].eq("").all() and spt_table["ISPT_NVAL"].eq("").all():
+            spt_table = pd.DataFrame(columns=desired_ispt_columns)
             warnings.warn(
-                f"No SPT N values found in {report}, creating empty SPT measurements"
+                f"No SPT ISPT_MAIN values found in {report}, creating empty SPT measurements"
             )
 
     # Initialize geology table
-    geology_table = pd.DataFrame(columns=["top_depth", "soil_types"])
+    geology_table = pd.DataFrame(columns=geology_columns)
 
     # Try to extract geology data if GEOL table exists
     if "GEOL" in tables and tables.get("GEOL") is not None:
-        geology_table = (
-            tables["GEOL"][["GEOL_TOP", "GEOL_DESC"]]
-            .iloc[2:]
-            .rename(columns={"GEOL_TOP": "top_depth", "GEOL_DESC": "soil_types"})
+        geol_df = tables["GEOL"][geology_columns].iloc[2:].copy()
+        geol_df = _filter_by_investigation(geol_df, investigation_ids)
+        geology_table = geol_df.rename(
+            columns={"GEOL_TOP": "top_depth", "GEOL_DESC": "soil_types"}
         )
         geology_table["soil_types"] = geology_table["soil_types"].apply(
             extract_soil_report,
         )
 
-    # Try to extract efficiency from report text
-    efficiency = None
-    try:
-        report_data = report.read_bytes()
-        encoding = chardet.detect(report_data)
-        report_text = report_data.decode(encoding["encoding"])
+    efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
+    groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
 
-        if efficiencies := list(re.finditer(RATIO_RE, report_text)):
-            label = re.search(LABEL_RE, report_text)
-            if label:
-                label_start = label.start(0)
-                label_end = label.end(0)
-                efficiency = float(
-                    min(
-                        efficiencies,
-                        # Hausdorff distance between label spans to find the
-                        # one that is most likely to be the hammer energy
-                        # efficiency ratio.
-                        key=lambda m: max(
-                            abs(m.start(0) - label_start),
-                            abs(m.end(0) - label_end),
-                        ),
-                    ).group(1),
-                )
-    except Exception as e:
-        warnings.warn(f"Could not extract efficiency from {report}: {e}")
+    # Try to extract efficiency from report text only if not already found
+    if efficiency is None:
+        try:
+            report_data = report.read_bytes()
+            encoding = chardet.detect(report_data)
+            report_text = report_data.decode(encoding["encoding"])
+
+            if efficiencies := list(re.finditer(RATIO_RE, report_text)):
+                label = re.search(LABEL_RE, report_text)
+                if label:
+                    label_start = label.start(0)
+                    label_end = label.end(0)
+                    efficiency = float(
+                        min(
+                            efficiencies,
+                            # Hausdorff distance between label spans to find the
+                            # one that is most likely to be the hammer energy
+                            # efficiency ratio.
+                            key=lambda m: max(
+                                abs(m.start(0) - label_start),
+                                abs(m.end(0) - label_end),
+                            ),
+                        ).group(1),
+                    )
+        except Exception as e:
+            warnings.warn(f"Could not extract efficiency from {report}: {e}")
 
     # Check if any meaningful data was extracted
-    has_spt_data = not spt_table.empty and not spt_table["N"].eq("").all()
+    has_spt_data = not spt_table.empty and not spt_table["ISPT_MAIN"].eq("").all()
     has_soil_data = not geology_table.empty
     has_efficiency = efficiency is not None
 
@@ -158,7 +277,7 @@ def process_borehole(borehole_id: int, report: Path) -> SPTReport:
         borehole_id=borehole_id,
         nzgd_id=borehole_id,
         efficiency=efficiency,
-        extracted_gwl=None,
+        extracted_gwl=groundwater_level,
         source_file=report,
         spt_measurements=spt_table,
         soil_measurements=geology_table,
@@ -194,6 +313,25 @@ def process_borehole_no_exceptions(
 
 
 def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
+    """Persist extracted borehole data into the SQLite schema.
+
+    Parameters
+    ----------
+    reports : list of SPTReport
+        Collection of parsed borehole reports containing SPT measurements,
+        soil classifications, and optional efficiency/groundwater metadata.
+    conn : sqlite3.Connection
+        Open database connection pointing at the NZGD extraction database.
+
+    Notes
+    -----
+    The function performs the following steps:
+
+    1. Upsert each `SPTReport` into the `sptreport` table.
+    2. Collate all unique soil types, ensuring that supporting lookups exist.
+    3. Insert SPT measurements while normalising missing numeric values.
+    4. Insert geology intervals and link them to their soil classifications.
+    """
     cursor = conn.cursor()
 
     # Insert SPTReports
@@ -234,13 +372,24 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             for _, row in report.spt_measurements.iterrows():
                 # Handle NaN/None values by converting to None for SQLite
                 depth = row["Depth"] if pd.notna(row["Depth"]) else None
-                n_value = row["N"] if pd.notna(row["N"]) and row["N"] != "" else None
+                ispt_main_n = (
+                    row["ISPT_MAIN"]
+                    if pd.notna(row["ISPT_MAIN"]) and row["ISPT_MAIN"] != ""
+                    else None
+                )
+                ispt_nval = (
+                    row["ISPT_NVAL"]
+                    if "ISPT_NVAL" in row
+                    and pd.notna(row["ISPT_NVAL"])
+                    and row["ISPT_NVAL"] != ""
+                    else None
+                )
                 cursor.execute(
                     """
-                    INSERT INTO sptmeasurements (spt_id, depth_m, n)
-                    VALUES (?, ?, ?)
+                    INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL)
+                    VALUES (?, ?, ?, ?)
                 """,
-                    (report.borehole_id, depth, n_value),
+                    (report.borehole_id, depth, ispt_main_n, ispt_nval),
                 )
         # Only process soil measurements if the DataFrame is not empty
         if not report.soil_measurements.empty:

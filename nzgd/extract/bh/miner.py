@@ -556,7 +556,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                 n_value = row["N"] if pd.notna(row["N"]) else None
                 cursor.execute(
                     """
-                    INSERT INTO sptmeasurements (spt_id, depth_m, n)
+                    INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN)
                     VALUES (?, ?, ?)
                 """,
                     (report.borehole_id, depth, n_value),
