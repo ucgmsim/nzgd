@@ -61,7 +61,12 @@ import pandas as pd
 import tqdm
 import typer
 
-from nzgd.constants import INDEX_FILE_PATH, SPT_AGS_LOG_FILE_PATH
+from nzgd.constants import (
+    INDEX_FILE_PATH,
+    MAX_ALLOWED_GWL,
+    MIN_ALLOWED_GWL,
+    SPT_AGS_LOG_FILE_PATH,
+)
 from nzgd.extract.bh.ags_parser import load_ags_tables
 from nzgd.extract.bh.utils import SPTReport, extract_soil_report
 
@@ -607,6 +612,11 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
 
     efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
     groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
+
+    # Validate groundwater_level against allowed bounds
+    if groundwater_level is not None:
+        if groundwater_level > MAX_ALLOWED_GWL or groundwater_level < MIN_ALLOWED_GWL:
+            groundwater_level = None
 
     # Try to extract efficiency from report text only if not already found
     if efficiency is None:

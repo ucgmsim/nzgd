@@ -51,6 +51,8 @@ OUTPUT_DB_PATH = Path(CONFIG["output_db_path"])
 TEMP_SPT_AGS_DB_PATH = Path(CONFIG["temp_spt_ags_db"])
 TEMP_SPT_PDF_DB_PATH = Path(CONFIG["temp_spt_pdf_db"])
 
+SPT_AGS_LOG_FILE_PATH = Path(CONFIG["spt_ags_log_file_path"])
+
 # Get relevant file extensions from the configuration file
 FILE_EXTENSIONS = CONFIG["file_extensions"]
 
