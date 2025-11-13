@@ -138,11 +138,13 @@ def copy_spt_measurements(
     next_measurement_id = (result[0] + 1) if result[0] is not None else 1
 
     # Get all SPT measurements from temporary database
-    temp_cursor.execute("SELECT spt_id, depth_m, n FROM sptmeasurements")
+    temp_cursor.execute(
+        "SELECT spt_id, depth_m, ISPT_MAIN, ISPT_NVAL FROM sptmeasurements"
+    )
     temp_measurements = temp_cursor.fetchall()
 
     for temp_measurement in temp_measurements:
-        original_spt_id, depth_m, n = temp_measurement
+        original_spt_id, depth_m, ispt_main, ispt_nval = temp_measurement
 
         if original_spt_id in spt_id_mapping:
             new_spt_id = spt_id_mapping[original_spt_id]
@@ -150,10 +152,10 @@ def copy_spt_measurements(
             # Insert into main database with new spt_measurement_id
             main_cursor.execute(
                 """
-                INSERT INTO sptmeasurements (spt_measurement_id, spt_id, depth_m, n)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO sptmeasurements (spt_measurement_id, spt_id, depth_m, ISPT_MAIN, ISPT_NVAL)
+                VALUES (?, ?, ?, ?, ?)
             """,
-                (next_measurement_id, new_spt_id, depth_m, n),
+                (next_measurement_id, new_spt_id, depth_m, ispt_main, ispt_nval),
             )
             next_measurement_id += 1
 
