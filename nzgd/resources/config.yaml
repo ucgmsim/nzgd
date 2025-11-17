@@ -4,12 +4,12 @@ subdirectories:
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p3p3_20251112.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p3p3_20251113.db"
 
-temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p3p3_20251112.db"
-temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p3p3_20251112.db"
+temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p3p3_20251113.db"
+temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p3p3_20251113.db"
 
-spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p3p3_20251112.csv"
+spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p3p3_20251113.csv"
 
 all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values.csv"
 cpt_supplemental_values_filename: "cpt_supplemental_values.csv"
@@ -31,6 +31,8 @@ nzgd_TypeDisplay_values_for_boreholes:
   - "borehole_definition_from_previous_nzgd"
   - "Wash boring"
   - "Rotary open hole borehole"
+  - "Sonic core drilling"
+
 
 nzgd_TypeDisplay_values_for_CPTs:
   - "CPT - Cone Penetration Test"
