@@ -127,13 +127,13 @@ def extract_numerical_value(
     return value
 
 
-def extract_closest_digits(s: str, idx: int) -> str:
+def extract_associated_value_from_str(s: str, idx: int) -> str:
     """Find all numerical values in the string and return the one closest to the given index.
 
     Returns an empty string if no digits are found.
     """
     # Find all numerical matches in the string
-    matches = list(re.finditer(r"\d+\.?\d*", s))
+    matches = list(re.finditer(constants.NUMERICAL_VALUES_REGEX, s))
 
     if not matches:
         return ""
@@ -245,27 +245,100 @@ def extract_numerical_quantity(
         max_allowed_value = constants.MAX_ALLOWED_TIP_NET_AREA_RATIO
         min_allowed_value = constants.MIN_ALLOWED_TIP_NET_AREA_RATIO
 
+    search_terms_for_all_quantities = [
+        term
+        for term_list in constants.quantity_to_search_term.values()
+        for term in term_list
+    ]
+
     # Examine each row of possible values in detail
     for row_idx, row in possible_values_df.iterrows():
         cell_contents = row["value"].lower()
         # If the cell contents (containing possible values) is a string that
-        # includes at least one key word extract the number that is closest to the
-        # corresponding keyword
-        if any(
-            quantity_to_search_term in cell_contents
-            for quantity_to_search_term in quantity_to_search_term[quantity_to_extract]
-        ):
-            # Find which term is in the value
-            for search_term in quantity_to_search_term[quantity_to_extract]:
-                if search_term in cell_contents:
-                    idx_in_str = cell_contents.find(search_term)
-                    break
+        # includes at least one key word, we extract the numerical value that
+        # is most likely associated with the quantity.
 
-            closest_digit_str = extract_closest_digits(cell_contents, idx_in_str)
-            if closest_digit_str:
+        indices_of_quantity_search_terms_in_cell_contents = [
+            cell_contents.find(search_term)
+            for search_term in constants.quantity_to_search_term[quantity_to_extract]
+        ]
+
+        quantity_search_term_is_present_bool = (
+            np.array(indices_of_quantity_search_terms_in_cell_contents) >= 0
+        )
+
+        if any(quantity_search_term_is_present_bool):
+            # Get the search term that is present in the cell contents.
+            # np.array(constants.quantity_to_search_term[quantity_to_extract]) is an array so get the first element with [0]
+            # If multiple search terms are present, any will do, so just use the first element [0]
+
+            # found_quantity_search_term = str(
+            #     np.array(constants.quantity_to_search_term[quantity_to_extract])[
+            #         quantity_search_term_is_present_bool
+            #     ][0]
+            # )
+
+            found_quantity_search_term_idx = np.array(
+                indices_of_quantity_search_terms_in_cell_contents
+            )[quantity_search_term_is_present_bool][0]
+
+            # Find the minimum index of any present search term for any quantity in the cell contents
+            # to inform if numerical values are before or after search terms.
+
+            min_idx_of_any_present_quantity_search_term_in_cell_contents = min(
+                [
+                    cell_contents.find(search_term)
+                    for search_term in search_terms_for_all_quantities
+                    if cell_contents.find(search_term) != -1
+                ]
+            )
+
+            # Get index of first numerical value. If no numerical value is found, the value is None.
+            first_num_match = re.search(constants.NUMERICAL_VALUES_REGEX, cell_contents)
+            first_num_idx = first_num_match.start() if first_num_match else None
+
+            if first_num_idx is None:
+                values_before_search_term = False
+            else:
+                values_before_search_term = (
+                    first_num_idx
+                    < min_idx_of_any_present_quantity_search_term_in_cell_contents
+                )
+
+            if values_before_search_term:
+                # We need to get the last numerical value found in the slice of the cell contents from 0 to the found quantity search term index
+                slice_idxs = (0, found_quantity_search_term_idx)
+
+                # Get the last match in matches from this slice
+                needed_idx_for_matches = -1
+            else:
+                # We need to get the first numerical value found in the slice of the cell centents from the found quantity search term index to the end of the cell contents
+                slice_idxs = (found_quantity_search_term_idx, len(cell_contents))
+
+                # Get the first match in matches from this slice
+                needed_idx_for_matches = 0
+
+            matches = [
+                m
+                for m in re.finditer(
+                    constants.NUMERICAL_VALUES_REGEX,
+                    cell_contents[slice_idxs[0] : slice_idxs[1]],
+                )
+            ]
+
+            # If no matches are found, just continue to the next row
+            if len(matches) == 0:
+                continue
+
+            # Get the numerical value that is closest to the found quantity search term
+            closest_numerical_value_str = matches[needed_idx_for_matches].group()
+
+            if closest_numerical_value_str:
                 extracted_values_df.at[row_idx, str(quantity_to_extract)] = (  # type: ignore  # Pylance is overly strict about pandas indexing types
                     extract_numerical_value(
-                        cell_contents[cell_contents.find(closest_digit_str) :],
+                        cell_contents[
+                            cell_contents.find(closest_numerical_value_str) :
+                        ],
                         check_for_cm=check_for_cm,
                     )
                 )
@@ -452,43 +525,6 @@ def extract_termination_reason(
     return extracted_values
 
 
-quantity_to_search_term = {
-    "termination_reason": [
-        "target",
-        "termination",
-        "refusal",
-        "reason",
-        "reasons",
-        "comment",
-        "comments",
-        "remark",
-        "remarks",
-    ],
-    "ground_water_level": [
-        "gwl",
-        "swl",
-        "ground water",
-        "waterlevel",
-        "water level",
-        "water table",
-        "water depth",
-        "groundwater level",
-    ],
-    "tip_net_area_ratio": [
-        "alpha factor",
-        "area ratio",
-        "arearatio",
-        "conearearatio",
-        "conetipnetarearatio",
-        "cone tip net area ratio",
-        "net surface area quotient of cone tip",
-        "a factor",
-        "alpha factor",
-        "alphafactor",
-    ],
-    "predrill_depth": ["predrill", "pre-drill", "pre-drill (m)", "predrilled"],
-}
-
 all_options_df = pd.read_csv(
     constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
     / constants.ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME,
@@ -496,7 +532,7 @@ all_options_df = pd.read_csv(
 
 # Create reverse mapping from search term to quantity description
 search_term_to_quantity = {}
-for quantity_desc, search_terms in quantity_to_search_term.items():
+for quantity_desc, search_terms in constants.quantity_to_search_term.items():
     for search_term in search_terms:
         search_term_to_quantity[search_term] = quantity_desc
 
@@ -549,12 +585,11 @@ for nzgd_id in tqdm(unique_nzgd_id):
                 # There are no valid options, so just continue to the next check
                 if len(per_quantity_sheet_filename_id_df) == 0:
                     continue
-
                 per_quantity_sheet_filename_id_df["value"] = (
                     per_quantity_sheet_filename_id_df["value"].astype(str)
                 )
 
-                if quantity == "termination_reason":
+                if quantity == constants.QuantityToExtract.termination_reason:
                     extracted_values_from_sheet_filename_id = (
                         extract_termination_reason(
                             extracted_values_from_sheet_filename_id,
@@ -562,30 +597,12 @@ for nzgd_id in tqdm(unique_nzgd_id):
                         )
                     )
 
-                if quantity == "ground_water_level":
+                else:
                     extracted_values_from_sheet_filename_id = (
                         extract_numerical_quantity(
                             extracted_values_from_sheet_filename_id,
                             per_quantity_sheet_filename_id_df,
-                            constants.QuantityToExtract.ground_water_level,
-                        )
-                    )
-
-                if quantity == "tip_net_area_ratio":
-                    extracted_values_from_sheet_filename_id = (
-                        extract_numerical_quantity(
-                            extracted_values_from_sheet_filename_id,
-                            per_quantity_sheet_filename_id_df,
-                            constants.QuantityToExtract.tip_net_area_ratio,
-                        )
-                    )
-
-                if quantity == "predrill_depth":
-                    extracted_values_from_sheet_filename_id = (
-                        extract_numerical_quantity(
-                            extracted_values_from_sheet_filename_id,
-                            per_quantity_sheet_filename_id_df,
-                            constants.QuantityToExtract.predrill_depth,
+                            quantity,
                         )
                     )
 

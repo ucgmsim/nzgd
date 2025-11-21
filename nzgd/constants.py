@@ -120,7 +120,7 @@ class NumOrText(enum.StrEnum):
 
 
 class QuantityToExtract(enum.StrEnum):
-    """Enumerations to describe or numeric or text data.
+    """Enumerations to describe the quantity to extract.
 
     Attributes
     ----------
@@ -130,11 +130,14 @@ class QuantityToExtract(enum.StrEnum):
         StrEnum representing tip net area ratio.
     predrill_depth : enum.StrEnum
         StrEnum representing predrill depth.
+    termination_reason : enum.StrEnum
+        StrEnum representing termination reason.
     """
 
     ground_water_level = "ground_water_level"
     tip_net_area_ratio = "tip_net_area_ratio"
     predrill_depth = "predrill_depth"
+    termination_reason = "termination_reason"
 
 
 ENCODINGS_TO_TRY = CONFIG["encodings_to_try"]
@@ -597,6 +600,48 @@ refused_keywords_dict = {
     },
 }
 
+
+quantity_to_search_term = {
+    QuantityToExtract.termination_reason: [
+        "target",
+        "termination",
+        "refusal",
+        "reason",
+        "reasons",
+        "comment",
+        "comments",
+        "remark",
+        "remarks",
+    ],
+    QuantityToExtract.ground_water_level: [
+        "gwl",
+        "swl",
+        "ground water",
+        "waterlevel",
+        "water level",
+        "water table",
+        "water depth",
+        "groundwater level",
+    ],
+    QuantityToExtract.tip_net_area_ratio: [
+        "alpha factor",
+        "area ratio",
+        "arearatio",
+        "conearearatio",
+        "conetipnetarearatio",
+        "cone tip net area ratio",
+        "net surface area quotient of cone tip",
+        "a factor",
+        "alpha factor",
+        "alphafactor",
+    ],
+    QuantityToExtract.predrill_depth: [
+        "predrill",
+        "pre-drill",
+        "pre-drill (m)",
+        "predrilled",
+    ],
+}
 
 # Values to SQLite ID mappings
 SOIL_TYPE_TO_ID = {
