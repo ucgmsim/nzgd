@@ -1,3 +1,5 @@
+"""Add NLM groundwater level values to the NZGD index file."""
+
 from pathlib import Path
 
 import numpy as np
@@ -49,6 +51,57 @@ all_nzgd_metadata_df = all_nzgd_metadata_df.drop_duplicates(
 all_nzgd_metadata_df = all_nzgd_metadata_df.sort_values(
     by="nzgd_id", key=natsort_keygen()
 )
+
+# Check for rows with missing nztm_x or nztm_y coordinates
+missing_nztm_x = all_nzgd_metadata_df["nztm_x"].isna()
+missing_nztm_y = all_nzgd_metadata_df["nztm_y"].isna()
+missing_nztm_x_or_y = missing_nztm_x | missing_nztm_y
+
+if missing_nztm_x_or_y.any():
+    print(
+        f"Found {missing_nztm_x_or_y.sum()} rows with missing nztm_x or nztm_y coordinates:"
+    )
+    print(f"  - {missing_nztm_x.sum()} rows missing nztm_x")
+    print(f"  - {missing_nztm_y.sum()} rows missing nztm_y")
+    print(f"  - {(missing_nztm_x & missing_nztm_y).sum()} rows missing both")
+
+    rows_with_missing_coords = all_nzgd_metadata_df[missing_nztm_x_or_y]
+    print("\nRows with missing coordinates (showing nzgd_id):")
+    print(rows_with_missing_coords[["nzgd_id", "nztm_x", "nztm_y"]].to_string())
+else:
+    print("All rows have valid nztm_x and nztm_y coordinates.")
+
+print()
+
+# Check for rows with missing region, district, city, or suburb
+missing_region = all_nzgd_metadata_df["region"].isna()
+missing_district = all_nzgd_metadata_df["district"].isna()
+missing_city = all_nzgd_metadata_df["city"].isna()
+missing_suburb = all_nzgd_metadata_df["suburb"].isna()
+missing_location_info = (
+    missing_region | missing_district | missing_city | missing_suburb
+)
+
+if missing_location_info.any():
+    print(
+        f"Found {missing_location_info.sum()} rows with missing location information:"
+    )
+    print(f"  - {missing_region.sum()} rows missing region")
+    print(f"  - {missing_district.sum()} rows missing district")
+    print(f"  - {missing_city.sum()} rows missing city")
+    print(f"  - {missing_suburb.sum()} rows missing suburb")
+
+    rows_with_missing_location = all_nzgd_metadata_df[missing_location_info]
+    print(
+        "\nRows with missing location information (showing nzgd_id and location columns):"
+    )
+    print(
+        rows_with_missing_location[
+            ["nzgd_id", "region", "district", "city", "suburb"]
+        ].to_string()
+    )
+else:
+    print("All rows have valid region, district, city, and suburb values.")
 
 # Paths to GeoTIFF files
 westerhoff_2018_model_path = Path(
@@ -131,8 +184,6 @@ if needs_westerhoff.any() or needs_nlm_gwl.any() or needs_nlm_gwl_stddev.any():
     print("Sampling complete.")
 else:
     print("No missing values found that need sampling.")
-
-print()
 
 all_nzgd_metadata_df.to_csv(
     constants.RESOURCE_PATH
