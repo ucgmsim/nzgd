@@ -723,3 +723,13 @@ WATER_UNIT_WEIGHT_kN_m3 = 9.81
 # in the vertical effective stress after second increments hence add 12 inches(0.3 m) on top of the start
 # depth given
 SPT_DEPTH_OFFSET_m = 0.3048
+
+# Identify ",", ";", and "." not preceded or followed by a digit as phrase boundaries.
+# Regex explanation for r"(?<!\d)\.(?!\d)":
+#   (?<!\d) - negative lookbehind: matches if NOT preceded by a digit
+#   \.      - matches a literal period (escaped because . is special in regex)
+#   (?!\d)  - negative lookahead: matches if NOT followed by a digit
+# This matches periods that are NOT part of decimal numbers (e.g., "3.14" won't match, but "a.b" will)
+PHRASE_BOUNDARY_CHARACTERS = [",", ";", r"\|", r"(?<!\d)\.(?!\d)"]
+
+LIKELY_PRECEDING_NUMERICAL_VALUES = [":", "="]

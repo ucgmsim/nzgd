@@ -249,40 +249,68 @@ def extract_numerical_quantity(
         term
         for term_list in constants.quantity_to_search_term.values()
         for term in term_list
-    ]
+    ] + constants.LIKELY_PRECEDING_NUMERICAL_VALUES
 
     # Examine each row of possible values in detail
     for row_idx, row in possible_values_df.iterrows():
         cell_contents = row["value"].lower()
+
         # If the cell contents (containing possible values) is a string that
         # includes at least one key word, we extract the numerical value that
         # is most likely associated with the quantity.
 
-        indices_of_quantity_search_terms_in_cell_contents = [
-            cell_contents.find(search_term)
-            for search_term in constants.quantity_to_search_term[quantity_to_extract]
-        ]
-
-        quantity_search_term_is_present_bool = (
-            np.array(indices_of_quantity_search_terms_in_cell_contents) >= 0
+        # Get the indices of the quantity's search terms in the cell contents.
+        # Will be -1 if the search term is not present.
+        indices_of_quantity_search_terms_in_cell_contents = np.array(
+            [
+                cell_contents.find(search_term)
+                for search_term in constants.quantity_to_search_term[
+                    quantity_to_extract
+                ]
+            ]
         )
 
-        if any(quantity_search_term_is_present_bool):
-            # Get the search term that is present in the cell contents.
-            # np.array(constants.quantity_to_search_term[quantity_to_extract]) is an array so get the first element with [0]
-            # If multiple search terms are present, any will do, so just use the first element [0]
-
-            # found_quantity_search_term = str(
-            #     np.array(constants.quantity_to_search_term[quantity_to_extract])[
-            #         quantity_search_term_is_present_bool
-            #     ][0]
-            # )
-
-            found_quantity_search_term_idx = np.array(
+        # If a quantity's search term is in cell_contents
+        if any(indices_of_quantity_search_terms_in_cell_contents >= 0):
+            index_of_quantity_search_term_in_cell_contents = np.array(
                 indices_of_quantity_search_terms_in_cell_contents
-            )[quantity_search_term_is_present_bool][0]
+            )[indices_of_quantity_search_terms_in_cell_contents >= 0][0]
 
-            # Find the minimum index of any present search term for any quantity in the cell contents
+            # phrase boundary indices initially set to the start and end of the cell contents
+            phrase_boundary_indices = [
+                0,
+                len(cell_contents),
+            ]
+            for pattern in constants.PHRASE_BOUNDARY_CHARACTERS:
+                # Find all matches and collect their start indices
+                for match in re.finditer(pattern, cell_contents):
+                    phrase_boundary_indices.append(match.start())
+            # Sort the phrase boundary indices to create a list of contiguous ranges
+            phrase_boundary_indices = np.array(sorted(phrase_boundary_indices))
+
+            rightmost_phrase_boundary_idx = np.digitize(
+                index_of_quantity_search_term_in_cell_contents, phrase_boundary_indices
+            )
+
+            # Slice cell_contents to only include the phrase containing the quantity search term.
+            cell_contents = cell_contents[
+                phrase_boundary_indices[
+                    rightmost_phrase_boundary_idx - 1
+                ] : phrase_boundary_indices[rightmost_phrase_boundary_idx]
+            ]
+
+            # Get the indices of the quantity's search terms in the cell contents.
+            # Will be -1 if the search term is not present.
+            indices_of_quantity_search_terms_in_cell_contents = np.array(
+                [
+                    cell_contents.find(search_term)
+                    for search_term in constants.quantity_to_search_term[
+                        quantity_to_extract
+                    ]
+                ]
+            )
+
+            # Find the minimum index of any present search term (for any quantity) in the cell contents
             # to inform if numerical values are before or after search terms.
 
             min_idx_of_any_present_quantity_search_term_in_cell_contents = min(
@@ -307,13 +335,23 @@ def extract_numerical_quantity(
 
             if values_before_search_term:
                 # We need to get the last numerical value found in the slice of the cell contents from 0 to the found quantity search term index
-                slice_idxs = (0, found_quantity_search_term_idx)
+                slice_idxs = (
+                    0,
+                    indices_of_quantity_search_terms_in_cell_contents[
+                        indices_of_quantity_search_terms_in_cell_contents >= 0
+                    ][0],
+                )
 
                 # Get the last match in matches from this slice
                 needed_idx_for_matches = -1
             else:
                 # We need to get the first numerical value found in the slice of the cell centents from the found quantity search term index to the end of the cell contents
-                slice_idxs = (found_quantity_search_term_idx, len(cell_contents))
+                slice_idxs = (
+                    indices_of_quantity_search_terms_in_cell_contents[
+                        indices_of_quantity_search_terms_in_cell_contents >= 0
+                    ][0],
+                    len(cell_contents),
+                )
 
                 # Get the first match in matches from this slice
                 needed_idx_for_matches = 0
@@ -330,14 +368,17 @@ def extract_numerical_quantity(
             if len(matches) == 0:
                 continue
 
-            # Get the numerical value that is closest to the found quantity search term
-            closest_numerical_value_str = matches[needed_idx_for_matches].group()
+            # Get the substring containing the associated numerical value. Note that this substring does not need to contain
+            # trailing 'cm' units (if present) because the extract_numerical_value() function will search for
+            # `associated_numerical_value_str` and trailing 'cm' units in the original string containing the whole cell contents.
 
-            if closest_numerical_value_str:
+            associated_numerical_value_str = matches[needed_idx_for_matches].group()
+
+            if associated_numerical_value_str:
                 extracted_values_df.at[row_idx, str(quantity_to_extract)] = (  # type: ignore  # Pylance is overly strict about pandas indexing types
                     extract_numerical_value(
                         cell_contents[
-                            cell_contents.find(closest_numerical_value_str) :
+                            cell_contents.find(associated_numerical_value_str) :
                         ],
                         check_for_cm=check_for_cm,
                     )
