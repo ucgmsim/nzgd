@@ -87,3 +87,12 @@ class SPTReport:
 
     soil_measurements: pd.DataFrame
     """The SPT soil measurements. A dataframe with columns 'top_depth', and 'soil_types'"""
+    
+    density_measurements: pd.DataFrame
+    """Depth-specific density measurements from GEOL table. A dataframe with columns 
+    'top_depth_m', 'bottom_depth_m', 'density_description', 'density_index_min', 
+    and 'density_index_max'. All rows have depth associations."""
+    
+    spt_density_indices: pd.DataFrame
+    """General density index ranges from ADDL_CNDN table (no depth associations). 
+    A dataframe with columns 'density_index_min' and 'density_index_max'."""

@@ -49,7 +49,6 @@ import multiprocessing
 import re
 import sqlite3
 import warnings
-from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -101,8 +100,6 @@ class LocaDiagnostics:
         Flag that the missing-investigation warning has been emitted.
     warned_no_match : bool
         Flag that the missing-match warning has been emitted.
-    investigation_tokens : tuple[str, ...] | None
-        Cached, normalized InvestigationId tokens used during matching.
     """
 
     nzgd_id: int
@@ -114,7 +111,6 @@ class LocaDiagnostics:
     all_loca_ids: str | None = None
     warned_no_InvestigationID: bool = False
     warned_no_match: bool = False
-    investigation_tokens: tuple[str, ...] | None = None
 
     def to_log_row(self) -> dict[str, Any]:
         """Return the diagnostics state formatted for CSV logging."""
@@ -160,204 +156,293 @@ LOG_COLUMNS = [
 ]
 
 
-_NON_ALNUM_SPLIT_RE = re.compile(r"[^A-Za-z0-9]+")
-_RANGE_TOKEN_RE = re.compile(r"^([A-Z]+)(\d+)-(\d+)$")
-_SUFFIX_RE = re.compile(r"(\d+[A-Z]*)$")
+def _try_single_prefix_match(
+    loca_ids_with_counts: list[tuple[str, int]],
+    investigation_id: str,
+) -> str | None:
+    """Try to match using single prefix strategy.
 
+    When a prefix appears in InvestigationId and only one LOCA_ID has that prefix,
+    use that LOCA_ID.
 
-def _classify_token(value: str) -> int:
-    """Return a category for token specificity."""
-    has_alpha = any(ch.isalpha() for ch in value)
-    has_digit = any(ch.isdigit() for ch in value)
-    if has_alpha and has_digit:
-        return 0
-    if has_digit:
-        return 1
-    if has_alpha:
-        return 2
-    return 3
+    Parameters
+    ----------
+    loca_ids_with_counts : list[tuple[str, int]]
+        List of (LOCA_ID, table_count) tuples.
+    investigation_id : str
+        The InvestigationId string.
 
+    Returns
+    -------
+    str | None
+        Matched LOCA_ID if found, None otherwise.
+    """
+    investigation_upper = investigation_id.upper()
+    loca_ids = [loca_id for loca_id, _count in loca_ids_with_counts]
 
-def _numeric_value(value: str) -> int | None:
-    """Extract the integer represented in the token, if any."""
-    digits = "".join(ch for ch in value if ch.isdigit())
-    if digits:
-        try:
-            return int(digits)
-        except ValueError:
-            return None
+    # Count occurrences of each prefix in LOCA_IDs
+    prefix_counts: dict[str, list[str]] = {}
+    for loca_id in loca_ids:
+        prefix_match = re.match(r"^([A-Za-z]+)", loca_id)
+        if prefix_match:
+            prefix = prefix_match.group(1).upper()
+            if prefix in investigation_upper:
+                if prefix not in prefix_counts:
+                    prefix_counts[prefix] = []
+                prefix_counts[prefix].append(loca_id)
+
+    # Find prefixes that appear only once
+    for prefix, matching_loca_ids in prefix_counts.items():
+        if len(matching_loca_ids) == 1:
+            return matching_loca_ids[0]
+
     return None
 
 
-def _token_variants(token: str) -> list[str]:
-    """Generate ordered token variants with decreasing specificity."""
-    variants: list[str] = []
-    seen: set[str] = set()
+def _try_bh_t_pattern_match(
+    loca_ids_with_counts: list[tuple[str, int]],
+    investigation_id: str,
+) -> str | None:
+    """Try to match using BH-t pattern strategy.
 
-    def push(value: str) -> None:
-        value = value.strip().upper()
-        if value and value not in seen:
-            variants.append(value)
-            seen.add(value)
+    When InvestigationId has pattern "BH-tX" or "BH_tX", extract number X and
+    find LOCA_ID with same number (preferring BH prefix).
 
-    push(token)
-    base = re.sub(r"[^A-Z0-9]", "", token.upper())
-    if base:
-        push(base)
-        trimmed_base = base.lstrip("0")
-        if trimmed_base and trimmed_base != base:
-            push(trimmed_base)
+    Parameters
+    ----------
+    loca_ids_with_counts : list[tuple[str, int]]
+        List of (LOCA_ID, table_count) tuples, sorted by table_count descending.
+    investigation_id : str
+        The InvestigationId string.
 
-        no_prefix = re.sub(r"^[A-Z]+", "", base)
-        if no_prefix and no_prefix != base:
-            push(no_prefix)
-            trimmed = no_prefix.lstrip("0")
-            if trimmed and trimmed != no_prefix:
-                push(trimmed)
-        else:
-            trimmed = base.lstrip("0")
-            if trimmed and trimmed != base:
-                push(trimmed)
+    Returns
+    -------
+    str | None
+        Matched LOCA_ID if found, None otherwise.
+    """
+    bh_t_match = re.search(r"BH[-_]t(\d+)", investigation_id, re.IGNORECASE)
+    if not bh_t_match:
+        return None
 
-        suffix_match = _SUFFIX_RE.search(base)
-        if suffix_match:
-            suffix = suffix_match.group(1)
-            push(suffix)
-            trimmed = suffix.lstrip("0")
-            if trimmed and trimmed != suffix:
-                push(trimmed)
+    number = bh_t_match.group(1)
+    loca_ids = [loca_id for loca_id, _count in loca_ids_with_counts]
 
-    return variants
+    # Find LOCA_IDs with this number, preferring BH prefix
+    candidates_with_bh = []
+    candidates_without_bh = []
 
+    for loca_id in loca_ids:
+        loca_number_match = re.search(r"(\d+)", loca_id)
+        if loca_number_match and loca_number_match.group(1) == number:
+            if "BH" in loca_id.upper():
+                candidates_with_bh.append(loca_id)
+            else:
+                candidates_without_bh.append(loca_id)
 
-def _expand_range_token(token: str) -> list[str]:
-    """Expand tokens of the form PREFIX00-05 into individual identifiers."""
-    match = _RANGE_TOKEN_RE.match(token.upper())
-    if not match:
-        return []
+    # Prefer BH-prefixed matches, then others
+    if candidates_with_bh:
+        return candidates_with_bh[0]
+    if candidates_without_bh:
+        return candidates_without_bh[0]
 
-    prefix, start_str, end_str = match.groups()
-    start = int(start_str)
-    end = int(end_str)
-    step = 1 if end >= start else -1
-    width = max(len(start_str), len(end_str))
-
-    expanded = [f"{prefix}{num:0{width}d}" for num in range(start, end + step, step)]
-    return expanded
+    return None
 
 
-def _generate_investigation_tokens(raw_value: str) -> list[str]:
-    """Generate ordered matching tokens from the InvestigationId string."""
-    tokens: list[str] = []
-    seen: set[str] = set()
+def _try_bracket_pattern_match(
+    loca_ids_with_counts: list[tuple[str, int]],
+    investigation_id: str,
+) -> str | None:
+    """Try to match using bracket pattern strategy.
 
-    def push(value: str) -> None:
-        for variant in _token_variants(value):
-            if variant not in seen:
-                tokens.append(variant)
-                seen.add(variant)
+    When InvestigationId has pattern "[PREFIX_BHX]" or "[PREFIX-BHX]", extract
+    prefix and number, find LOCA_ID with same prefix and number.
 
-    if not raw_value:
-        return tokens
+    Parameters
+    ----------
+    loca_ids_with_counts : list[tuple[str, int]]
+        List of (LOCA_ID, table_count) tuples, sorted by table_count descending.
+    investigation_id : str
+        The InvestigationId string.
 
-    push(raw_value)
+    Returns
+    -------
+    str | None
+        Matched LOCA_ID if found, None otherwise.
+    """
+    bracket_match = re.search(r"\[([^\]]+)\]", investigation_id)
+    if not bracket_match:
+        return None
 
-    for match in re.finditer(r"([A-Z]+)(\d+)-(\d+)", raw_value.upper()):
-        expanded = _expand_range_token(
-            f"{match.group(1)}{match.group(2)}-{match.group(3)}"
-        )
-        for value in expanded:
-            push(value)
+    bracket_content = bracket_match.group(1)
+    parts = re.split(r"[-_]", bracket_content)
+    number_match = re.search(r"(\d+)", bracket_content)
 
-    for bracket_token in re.findall(r"\[([^\]]+)\]", raw_value):
-        push(bracket_token)
+    if not number_match:
+        return None
 
-    for part in _NON_ALNUM_SPLIT_RE.split(raw_value):
-        if not part:
-            continue
-        push(part)
-        for expanded in _expand_range_token(part):
-            push(expanded)
+    number = int(number_match.group(1))  # Convert to int to handle leading zeros
+    prefix = parts[0].upper() if len(parts) >= 2 else None
 
-    return tokens
+    loca_ids = [loca_id for loca_id, _count in loca_ids_with_counts]
 
+    # Find LOCA_IDs with this number
+    candidates = []
+    for loca_id in loca_ids:
+        loca_number_match = re.search(r"(\d+)", loca_id)
+        if loca_number_match and int(loca_number_match.group(1)) == number:
+            candidates.append(loca_id)
 
-def _generate_loca_variants(loca_id: str) -> list[str]:
-    """Generate ordered variants for a LOCA_ID suitable for matching."""
-    variants: list[str] = []
-    seen: set[str] = set()
+    if not candidates:
+        return None
 
-    for variant in _token_variants(loca_id):
-        if variant not in seen:
-            variants.append(variant)
-            seen.add(variant)
+    # Filter by prefix if available
+    if prefix:
+        prefix_candidates = [
+            lid
+            for lid in candidates
+            if prefix in lid.upper() or prefix[:2] in lid.upper()
+        ]
+        if prefix_candidates:
+            return prefix_candidates[0]
 
-    for part in _NON_ALNUM_SPLIT_RE.split(loca_id):
-        if not part:
-            continue
-        for variant in _token_variants(part):
-            if variant not in seen:
-                variants.append(variant)
-                seen.add(variant)
-
-    return variants
+    # Return first candidate if no prefix match
+    return candidates[0]
 
 
-def _find_matching_locas(
-    loca_ids: Iterable[str],
-    investigation_tokens: Iterable[str],
-) -> list[str]:
-    """Return LOCA_IDs that align with the provided investigation tokens."""
-    tokens = [token.strip().upper() for token in investigation_tokens if token]
-    if not tokens:
-        return []
+def _try_context_based_match(
+    loca_ids_with_counts: list[tuple[str, int]],
+    investigation_id: str,
+) -> str | None:
+    """Try to match using context-based strategy.
 
-    loca_list = list(loca_ids)
-    if not loca_list:
-        return []
+    When InvestigationId contains location/context keywords that map to prefixes,
+    use that prefix along with number from bracket.
 
-    loca_variant_positions: list[tuple[str, list[str], dict[str, int]]] = []
-    for loca in loca_list:
-        variant_list = _generate_loca_variants(loca)
-        variant_positions = {variant: idx for idx, variant in enumerate(variant_list)}
-        loca_variant_positions.append((loca, variant_list, variant_positions))
+    Parameters
+    ----------
+    loca_ids_with_counts : list[tuple[str, int]]
+        List of (LOCA_ID, table_count) tuples, sorted by table_count descending.
+    investigation_id : str
+        The InvestigationId string.
 
-    best_match: tuple[tuple[int, int, int, int, int, int], str] | None = None
-    for token_idx, token in enumerate(tokens):
-        token_upper = token.strip().upper()
-        if not token_upper:
-            continue
-        token_category = _classify_token(token_upper)
-        token_numeric = _numeric_value(token_upper)
-        numeric_priority = -(token_numeric if token_numeric is not None else -1)
-        length_priority = -len(token_upper)
+    Returns
+    -------
+    str | None
+        Matched LOCA_ID if found, None otherwise.
+    """
+    # Keyword to prefix mapping
+    keyword_to_prefix = {
+        "town hall": "TH",
+        "michael fowler": "MF",
+        # Add more mappings as needed
+    }
 
-        for loca_idx, (loca, variant_list, variant_positions) in enumerate(
-            loca_variant_positions,
-        ):
-            if token_upper not in variant_positions:
-                continue
+    investigation_upper = investigation_id.upper()
 
-            variant_index = variant_positions[token_upper]
-            primary_variant = variant_list[0] if variant_list else ""
-            primary_flag = 0 if token_upper == primary_variant else 1
+    # Find matching keyword
+    matched_prefix = None
+    for keyword, prefix in keyword_to_prefix.items():
+        if keyword.upper() in investigation_upper:
+            matched_prefix = prefix
+            break
 
-            score = (
-                token_category,
-                primary_flag,
-                numeric_priority,
-                length_priority,
-                token_idx,
-                variant_index,
-                loca_idx,
-            )
-            if best_match is None or score < best_match[0]:
-                best_match = (score, loca)
+    if not matched_prefix:
+        return None
 
-    if best_match is None:
-        return []
+    # Extract number from bracket
+    bracket_match = re.search(r"\[([^\]]+)\]", investigation_id)
+    if not bracket_match:
+        return None
 
-    return [best_match[1]]
+    bracket_content = bracket_match.group(1)
+    number_match = re.search(r"(\d+)", bracket_content)
+    if not number_match:
+        return None
+
+    number = int(number_match.group(1))
+
+    # Find LOCA_IDs with this prefix and number
+    loca_ids = [loca_id for loca_id, _count in loca_ids_with_counts]
+    prefix_loca_ids = [
+        lid for lid in loca_ids if lid.upper().startswith(matched_prefix + "_")
+    ]
+
+    matching_loca_ids = [lid for lid in prefix_loca_ids if str(number) in lid]
+
+    if matching_loca_ids:
+        return matching_loca_ids[0]
+
+    return None
+
+
+def _find_matching_loca_from_investigation(
+    loca_ids_with_counts: list[tuple[str, int]],
+    investigation_id: str | None,
+) -> str | None:
+    """Find the best matching LOCA_ID by checking if it appears in InvestigationId.
+
+    This function works through LOCA_IDs sorted by the number of tables they appear in
+    (descending order), considering only ISPT and GEOL tables. For each LOCA_ID, it checks
+    if the LOCA_ID appears in the InvestigationId string. The first match is returned,
+    prioritizing LOCA_IDs that appear in more tables (ISPT and/or GEOL).
+
+    If simple substring matching fails, alternative strategies are tried as fallbacks:
+    1. Single prefix match
+    2. BH-t pattern matching
+    3. Bracket pattern matching
+    4. Context-based matching
+
+    Parameters
+    ----------
+    loca_ids_with_counts : list[tuple[str, int]]
+        List of (LOCA_ID, table_count) tuples, sorted by table_count descending.
+    investigation_id : str | None
+        The InvestigationId string to search in.
+
+    Returns
+    -------
+    str | None
+        The first LOCA_ID that appears in the InvestigationId string, or None if
+        no match is found or investigation_id is None/empty.
+    """
+    if not investigation_id:
+        return None
+
+    investigation_upper = investigation_id.upper()
+
+    # Strategy 1: Simple substring match (primary method)
+    # Work through LOCA_IDs in order (already sorted by table count descending)
+    # For each LOCA_ID, check if it appears as a substring in the InvestigationId
+    # Example: LOCA_ID "BH434" should be found in InvestigationId "City Rail Link Stage 4 [BH434]"
+    for loca_id, _table_count in loca_ids_with_counts:
+        loca_upper = loca_id.upper()
+        # Check if LOCA_ID is contained within InvestigationId (not the other way around)
+        # This checks: is "BH434" in "City Rail Link Stage 4 [BH434]"?
+        if loca_upper in investigation_upper:
+            return loca_id
+
+    # Strategy 2: Single prefix match (fallback)
+    match = _try_single_prefix_match(loca_ids_with_counts, investigation_id)
+    if match:
+        return match
+
+    # Strategy 3: BH-t pattern matching (fallback)
+    match = _try_bh_t_pattern_match(loca_ids_with_counts, investigation_id)
+    if match:
+        return match
+
+    # Strategy 4: Context-based matching (fallback - try before bracket pattern)
+    # This should run before bracket pattern to prioritize context when available
+    match = _try_context_based_match(loca_ids_with_counts, investigation_id)
+    if match:
+        return match
+
+    # Strategy 5: Bracket pattern matching (fallback)
+    match = _try_bracket_pattern_match(loca_ids_with_counts, investigation_id)
+    if match:
+        return match
+
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -372,32 +457,59 @@ def _load_index_data() -> pd.DataFrame:
     return pd.DataFrame(columns=["nzgd_id", "InvestigationId"])
 
 
-def _get_investigation_ids(nzgd_id: int) -> tuple[list[str], str | None]:
-    """Return potential LOCA_ID values and the raw InvestigationId."""
+def _get_investigation_id(nzgd_id: int) -> str | None:
+    """Return the raw InvestigationId string for the given nzgd_id.
+
+    Parameters
+    ----------
+    nzgd_id : int
+        The NZGD ID to look up.
+
+    Returns
+    -------
+    str | None
+        The InvestigationId string if found, None otherwise.
+    """
     index_df = _load_index_data()
     if index_df.empty or "InvestigationId" not in index_df.columns:
-        return [], None
+        return None
 
     matches = index_df.loc[index_df["nzgd_id"] == nzgd_id, "InvestigationId"]
     if matches.empty:
-        return [], None
+        return None
 
     value = matches.iloc[0]
     if pd.isna(value) or value == "":
-        return [], None
+        return None
 
-    raw_value = str(value).strip()
-    tokens = _generate_investigation_tokens(raw_value)
-
-    return tokens, raw_value
+    return str(value).strip()
 
 
 def _filter_by_investigation(
     df: pd.DataFrame,
-    investigation_ids: list[str],
+    investigation_id: str | None,
     diagnostics: LocaDiagnostics | None = None,
 ) -> pd.DataFrame:
-    """Filter a table to rows matching the investigation id if needed."""
+    """Filter a table to rows matching the matched LOCA_ID from diagnostics.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to filter.
+    investigation_id : str | None
+        The InvestigationId string (kept for compatibility, but matching is done via diagnostics).
+    diagnostics : LocaDiagnostics | None
+        Diagnostics object containing the matched LOCA_ID.
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered DataFrame containing only rows with the matched LOCA_ID.
+        Returns empty DataFrame if:
+        - No match found in InvestigationId, OR
+        - Matched LOCA_ID doesn't exist in this table
+        Returns original DataFrame if only one LOCA_ID exists (no filtering needed).
+    """
     if "LOCA_ID" not in df.columns:
         return df
 
@@ -409,54 +521,184 @@ def _filter_by_investigation(
         }
     )
 
+    # If only one LOCA_ID exists, no filtering needed
     if len(unique_loca_ids) <= 1:
         return df
 
+    # Use the matched LOCA_ID from diagnostics if available
     matched_loca_id = diagnostics.matched_loca_id if diagnostics else None
-    if matched_loca_id:
-        mask = (
-            df["LOCA_ID"].astype(str).str.strip().str.upper()
-            == matched_loca_id.strip().upper()
-        )
-        if mask.any():
-            return df[mask]
 
-    if diagnostics and diagnostics.investigation_tokens is None and investigation_ids:
-        diagnostics.investigation_tokens = tuple(investigation_ids)
-
-    if not investigation_ids:
+    # If no match was found in InvestigationId, return empty DataFrame
+    if not matched_loca_id:
         if diagnostics:
-            if diagnostics.warned_no_InvestigationID:
-                return df
-            diagnostics.warned_no_InvestigationID = True
-        warnings.warn(
-            "Multiple LOCA_ID values present but no InvestigationId found; "
-            "retaining all rows."
-        )
-        return df
+            if not investigation_id:
+                if not diagnostics.warned_no_InvestigationID:
+                    diagnostics.warned_no_InvestigationID = True
+                    warnings.warn(
+                        "Multiple LOCA_ID values present but no InvestigationId found; "
+                        "returning empty DataFrame."
+                    )
+            else:
+                if not diagnostics.warned_no_match:
+                    diagnostics.warned_no_match = True
+                    warnings.warn(
+                        f"No LOCA_ID found in InvestigationId '{investigation_id}'; "
+                        "returning empty DataFrame."
+                    )
+        else:
+            # Fallback: warn if no diagnostics available
+            if not investigation_id:
+                warnings.warn(
+                    "Multiple LOCA_ID values present but no InvestigationId found; "
+                    "returning empty DataFrame."
+                )
+            else:
+                warnings.warn(
+                    f"No LOCA_ID found in InvestigationId '{investigation_id}'; "
+                    "returning empty DataFrame."
+                )
+        # Return empty DataFrame with same columns
+        return df.iloc[0:0].copy()
 
-    matches = _find_matching_locas(unique_loca_ids, investigation_ids)
-    if matches:
-        matched = matches[0]
-        mask = (
-            df["LOCA_ID"].astype(str).str.strip().str.upper() == matched.strip().upper()
-        )
-        if mask.any():
-            if diagnostics:
-                diagnostics.matched_loca_id = matched
-                diagnostics.found_match = True
-            return df[mask]
-
-    if diagnostics:
-        if diagnostics.warned_no_match:
-            return df
-        diagnostics.warned_no_match = True
-
-    warnings.warn(
-        "InvestigationId(s) %s not found in table; retaining all rows."
-        % ", ".join(investigation_ids)
+    # Try to filter by matched LOCA_ID
+    mask = (
+        df["LOCA_ID"].astype(str).str.strip().str.upper()
+        == matched_loca_id.strip().upper()
     )
-    return df
+
+    if mask.any():
+        # Matched LOCA_ID exists in this table, return filtered rows
+        return df[mask]
+    else:
+        # Matched LOCA_ID doesn't exist in this table, return empty DataFrame
+        if diagnostics and not diagnostics.warned_no_match:
+            diagnostics.warned_no_match = True
+            warnings.warn(
+                f"Matched LOCA_ID '{matched_loca_id}' from InvestigationId "
+                f"'{investigation_id}' not found in this table; returning empty DataFrame."
+            )
+        # Return empty DataFrame with same columns
+        return df.iloc[0:0].copy()
+
+
+def _extract_density_from_description(description: str) -> list[str]:
+    """Extract density descriptions from a soil description string.
+
+    Patterns are matched in order from most specific to least specific to avoid
+    double-counting (e.g., "medium dense" is matched before standalone "dense").
+
+    Parameters
+    ----------
+    description : str
+        Soil description text (e.g., from GEOL_DESC).
+
+    Returns
+    -------
+    list[str]
+        List of density descriptions found (e.g., ['medium dense', 'dense']).
+        Compound phrases are prioritized over standalone terms.
+    """
+    if pd.isna(description) or not description:
+        return []
+
+    description_str = str(description).lower()
+
+    # Common density patterns (ordered from most specific to least specific)
+    # IMPORTANT: Order matters - compound phrases must come before standalone terms
+    patterns = [
+        r"very\s+high\s+density",
+        r"very\s+high\s+dense",
+        r"medium\s+to\s+high\s+density",
+        r"medium\s+to\s+high\s+dense",
+        r"medium\s+high\s+density",
+        r"medium\s+high\s+dense",
+        r"dense\s+to\s+very\s+dense",
+        r"loose\s+to\s+medium\s+dense",
+        r"loose\s+to\s+dense",
+        r"medium\s+to\s+low\s+density",
+        r"medium\s+to\s+low\s+dense",
+        r"very\s+dense",
+        r"medium\s+density",
+        r"medium\s+dense",  # Must come before standalone "dense"
+        r"high\s+density",
+        r"high\s+dense",
+        r"very\s+low\s+density",
+        r"very\s+low\s+dense",
+        r"low\s+density",
+        r"low\s+dense",
+        r"\bdense\b",  # Standalone "dense" - must come last to avoid matching compound phrases
+    ]
+
+    found_phrases = []
+    matched_positions = set()  # Track positions to avoid overlapping matches
+
+    for pattern in patterns:
+        matches = re.finditer(pattern, description_str, re.IGNORECASE)
+        for match in matches:
+            start_pos = match.start()
+            end_pos = match.end()
+
+            # Check if this position overlaps with a previously matched compound phrase
+            overlaps = any(
+                start_pos < prev_end and end_pos > prev_start
+                for prev_start, prev_end in matched_positions
+            )
+
+            if not overlaps:
+                phrase = match.group().strip()
+                # Normalize whitespace
+                phrase = re.sub(r"\s+", " ", phrase)
+                found_phrases.append(phrase)
+                matched_positions.add((start_pos, end_pos))
+
+    return found_phrases
+
+
+def _extract_density_index_ranges(
+    description: str,
+) -> list[dict[str, str | float | None]]:
+    """Extract density index ranges from a soil description string.
+
+    Looks for patterns like "density index 35 -65" or "density index 65-85"
+    and extracts the numeric ranges.
+
+    Parameters
+    ----------
+    description : str
+        Soil description text (e.g., from GEOL_DESC or ADDL_CNDN).
+
+    Returns
+    -------
+    list[dict]
+        List of dictionaries with 'range_min' and 'range_max' keys.
+        Example: [{'range_min': 35.0, 'range_max': 65.0}]
+    """
+    if pd.isna(description) or not description:
+        return []
+
+    description_str = str(description)
+
+    # Pattern to match "density index" followed by a number range
+    # Matches: "density index 35 -65", "density index 65-85", "density index 15 -35", etc.
+    pattern = r"density\s+index\s+(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)"
+
+    ranges = []
+    matches = re.finditer(pattern, description_str, re.IGNORECASE)
+
+    for match in matches:
+        try:
+            range_min = float(match.group(1))
+            range_max = float(match.group(2))
+            ranges.append(
+                {
+                    "range_min": range_min,
+                    "range_max": range_max,
+                }
+            )
+        except (ValueError, TypeError):
+            continue
+
+    return ranges
 
 
 def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
@@ -481,49 +723,115 @@ def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
     return None
 
 
-def _collect_loca_ids(tables: dict[str, pd.DataFrame]) -> set[str]:
-    loca_ids: set[str] = set()
-    for table in tables.values():
-        if not isinstance(table, pd.DataFrame) or "LOCA_ID" not in table.columns:
-            continue
+def _collect_loca_ids_and_table_counts(
+    tables: dict[str, pd.DataFrame],
+) -> list[tuple[str, int]]:
+    """Collect all LOCA_IDs and count how many tables each appears in.
+
+    Only counts occurrences in ISPT and GEOL tables, ignoring all other tables.
+
+    Parameters
+    ----------
+    tables : dict[str, pd.DataFrame]
+        Dictionary of table names to DataFrames loaded from an AGS file.
+
+    Returns
+    -------
+    list[tuple[str, int]]
+        List of (LOCA_ID, table_count) tuples, sorted by table_count descending,
+        then by LOCA_ID alphabetically. LOCA_IDs appearing in more tables come first.
+        Only counts occurrences in ISPT and GEOL tables.
+    """
+    loca_id_to_tables: dict[str, set[str]] = {}
+
+    # Find only ISPT and GEOL tables that have a LOCA_ID column
+    tables_with_loca_id = {
+        table_name: table
+        for table_name, table in tables.items()
+        if (
+            isinstance(table, pd.DataFrame)
+            and "LOCA_ID" in table.columns
+            and table_name in ("ISPT", "GEOL")
+        )
+    }
+
+    # Process each table
+    for table_name, table in tables_with_loca_id.items():
         series = table["LOCA_ID"]
+        # Skip the first 2 rows if HEADING column exists (UNIT and TYPE rows)
         if "HEADING" in table.columns and len(series) > 2:
             series = series.iloc[2:]
         for value in series.dropna():
             value_str = str(value).strip()
             if value_str:
-                loca_ids.add(value_str)
-    return loca_ids
+                # Track which table this LOCA_ID appears in
+                if value_str not in loca_id_to_tables:
+                    loca_id_to_tables[value_str] = set()
+                loca_id_to_tables[value_str].add(table_name)
+
+    # Convert to list of tuples and sort by table count (descending), then by LOCA_ID
+    result = [
+        (loca_id, len(tables_set)) for loca_id, tables_set in loca_id_to_tables.items()
+    ]
+    result.sort(key=lambda x: (-x[1], x[0]))  # Negative for descending order
+
+    return result
 
 
 def _build_loca_diagnostics(
     tables: dict[str, pd.DataFrame],
-    investigation_ids: list[str],
-    investigation_raw: str | None,
+    investigation_id: str | None,
     nzgd_id: int,
     ags_file_name: str,
 ) -> LocaDiagnostics:
+    """Build LOCA_ID diagnostics using the new approach.
+
+    The new approach:
+    1. Collects all LOCA_IDs and sorts them by number of tables they appear in (descending)
+    2. Checks if each LOCA_ID appears in the InvestigationId string
+    3. Uses the first matching LOCA_ID (prioritizing those in more tables)
+
+    Parameters
+    ----------
+    tables : dict[str, pd.DataFrame]
+        Dictionary of table names to DataFrames loaded from an AGS file.
+    investigation_id : str | None
+        The raw InvestigationId string from the index.
+    nzgd_id : int
+        The NZGD ID being processed.
+    ags_file_name : str
+        The name of the AGS file being processed.
+
+    Returns
+    -------
+    LocaDiagnostics
+        Diagnostics object with matching information.
+    """
     diagnostics = LocaDiagnostics(
         nzgd_id=nzgd_id,
         ags_file_name=ags_file_name,
-        investigation_raw=investigation_raw,
+        investigation_raw=investigation_id,
     )
 
-    unique_ids = sorted(_collect_loca_ids(tables))
+    # Collect LOCA_IDs sorted by table count (descending)
+    loca_ids_with_counts = _collect_loca_ids_and_table_counts(tables)
+    unique_ids = [loca_id for loca_id, _count in loca_ids_with_counts]
+
     diagnostics.has_multiple = len(unique_ids) > 1
 
     if diagnostics.has_multiple and unique_ids:
         diagnostics.all_loca_ids = "|".join(unique_ids)
-        if investigation_ids:
-            diagnostics.investigation_tokens = tuple(investigation_ids)
-            matched_candidates = _find_matching_locas(unique_ids, investigation_ids)
-            if matched_candidates:
-                diagnostics.found_match = True
-                diagnostics.matched_loca_id = matched_candidates[0]
-            else:
-                diagnostics.found_match = False
+        # Find matching LOCA_ID by checking if it appears in InvestigationId
+        print()
+        matched_loca_id = _find_matching_loca_from_investigation(
+            loca_ids_with_counts, investigation_id
+        )
+        if matched_loca_id:
+            diagnostics.found_match = True
+            diagnostics.matched_loca_id = matched_loca_id
         else:
             diagnostics.found_match = False
+            diagnostics.matched_loca_id = None
     else:
         diagnostics.all_loca_ids = None
         diagnostics.found_match = None
@@ -551,11 +859,11 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     """
     tables, headings = load_ags_tables(report)
 
-    investigation_ids, investigation_raw = _get_investigation_ids(borehole_id)
+    investigation_id = _get_investigation_id(borehole_id)
+    print()
     diagnostics = _build_loca_diagnostics(
         tables,
-        investigation_ids,
-        investigation_raw,
+        investigation_id,
         borehole_id,
         report.name,
     )
@@ -583,7 +891,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     # Try to extract SPT data if ISPT table exists
     if "ISPT" in tables:
         ispt_df = tables["ISPT"].iloc[2:].copy()
-        ispt_df = _filter_by_investigation(ispt_df, investigation_ids, diagnostics)
+        ispt_df = _filter_by_investigation(ispt_df, investigation_id, diagnostics)
         ispt_df = ispt_df.reindex(columns=ispt_columns, fill_value=pd.NA)
 
         spt_table = ispt_df.rename(columns={"ISPT_TOP": "Depth"}).reindex(
@@ -599,16 +907,130 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     # Initialize geology table
     geology_table = pd.DataFrame(columns=geology_columns)
 
+    # Initialize density measurements table (depth-specific from GEOL)
+    density_measurements = pd.DataFrame(
+        columns=[
+            "top_depth_m",
+            "bottom_depth_m",
+            "density_description",
+            "density_index_min",
+            "density_index_max",
+        ]
+    )
+
+    # Initialize general density index ranges (from ADDL_CNDN, no depth)
+    spt_density_indices = pd.DataFrame(
+        columns=[
+            "density_index_min",
+            "density_index_max",
+        ]
+    )
+
     # Try to extract geology data if GEOL table exists
     if "GEOL" in tables and tables.get("GEOL") is not None:
         geol_df = tables["GEOL"][geology_columns].iloc[2:].copy()
-        geol_df = _filter_by_investigation(geol_df, investigation_ids, diagnostics)
+        geol_df = _filter_by_investigation(geol_df, investigation_id, diagnostics)
         geology_table = geol_df.rename(
             columns={"GEOL_TOP": "top_depth", "GEOL_DESC": "soil_types"}
         )
         geology_table["soil_types"] = geology_table["soil_types"].apply(
             extract_soil_report,
         )
+
+        # Extract density measurements from GEOL descriptions
+        density_rows = []
+        for idx, row in geol_df.iterrows():
+            description = row.get("GEOL_DESC", "")
+            top_depth = row.get("GEOL_TOP", None)
+
+            # Try to get bottom depth if GEOL_BASE exists
+            bottom_depth = None
+            if "GEOL_BASE" in geol_df.columns:
+                bottom_depth = row.get("GEOL_BASE", None)
+
+            # Extract density descriptions (prioritizes compound phrases)
+            density_descriptions = _extract_density_from_description(description)
+
+            # Extract density index ranges
+            density_index_ranges = _extract_density_index_ranges(description)
+
+            # Try to convert depths to float
+            top_depth_float = None
+            bottom_depth_float = None
+
+            try:
+                if top_depth is not None and str(top_depth).strip():
+                    top_depth_float = float(str(top_depth).strip())
+            except (ValueError, TypeError):
+                pass
+
+            try:
+                if bottom_depth is not None and str(bottom_depth).strip():
+                    bottom_depth_float = float(str(bottom_depth).strip())
+            except (ValueError, TypeError):
+                pass
+
+            # Only add density rows if we have a valid top_depth (required field)
+            if top_depth_float is not None:
+                # Create rows for density descriptions
+                for density_desc in density_descriptions:
+                    density_rows.append(
+                        {
+                            "top_depth_m": top_depth_float,
+                            "bottom_depth_m": bottom_depth_float,
+                            "density_description": density_desc,
+                            "density_index_min": None,
+                            "density_index_max": None,
+                        }
+                    )
+
+                # Create rows for density index ranges
+                for index_range in density_index_ranges:
+                    density_rows.append(
+                        {
+                            "top_depth_m": top_depth_float,
+                            "bottom_depth_m": bottom_depth_float,
+                            "density_description": None,
+                            "density_index_min": index_range["range_min"],
+                            "density_index_max": index_range["range_max"],
+                        }
+                    )
+
+        if density_rows:
+            density_measurements = pd.DataFrame(density_rows)
+
+    # Also check ADDL_CNDN table for density index information
+    if "ADDL_CNDN" in tables and tables.get("ADDL_CNDN") is not None:
+        addl_cndn_df = tables["ADDL_CNDN"].iloc[2:].copy()
+        addl_cndn_df = _filter_by_investigation(
+            addl_cndn_df, investigation_id, diagnostics
+        )
+
+        # Check if ADDL_CNDN has description column (might be ADDL_CNDN or similar)
+        desc_column = None
+        for col in addl_cndn_df.columns:
+            if "DESC" in col.upper() or "CNDN" in col.upper():
+                desc_column = col
+                break
+
+        if desc_column:
+            density_index_rows = []
+            for idx, row in addl_cndn_df.iterrows():
+                description = row.get(desc_column, "")
+
+                # Extract density index ranges from ADDL_CNDN (no depth associations)
+                density_index_ranges = _extract_density_index_ranges(description)
+
+                for index_range in density_index_ranges:
+                    density_index_rows.append(
+                        {
+                            "density_index_min": index_range["range_min"],
+                            "density_index_max": index_range["range_max"],
+                        }
+                    )
+
+            if density_index_rows:
+                spt_density_indices = pd.DataFrame(density_index_rows)
 
     efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
     groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
@@ -664,6 +1086,8 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             source_file=report,
             spt_measurements=spt_table,
             soil_measurements=geology_table,
+            density_measurements=density_measurements,
+            spt_density_indices=spt_density_indices,
         ),
         log_row=diagnostics.to_log_row(),
     )
@@ -750,6 +1174,97 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
     soil_type_id_map = {
         value: soil_type_id for soil_type_id, value in cursor.fetchall()
     }
+
+    # Build density description lookup map (get or insert density descriptions)
+    cursor.execute("SELECT id, value FROM densitydescriptions")
+    density_desc_id_map = {
+        value.lower(): density_desc_id for density_desc_id, value in cursor.fetchall()
+    }
+
+    # Insert DensityMeasurements (depth-specific from GEOL)
+    density_data = []
+    for report in reports:
+        for _, row in report.density_measurements.iterrows():
+            top_depth = row.get("top_depth_m")
+            bottom_depth = row.get("bottom_depth_m")
+            density_desc = row.get("density_description")
+            density_index_min = row.get("density_index_min")
+            density_index_max = row.get("density_index_max")
+
+            # Convert density description to ID if present
+            density_desc_id = None
+            if density_desc and pd.notna(density_desc):
+                density_desc_lower = str(density_desc).lower().strip()
+                if density_desc_lower in density_desc_id_map:
+                    density_desc_id = density_desc_id_map[density_desc_lower]
+                else:
+                    # Insert new density description if not found
+                    cursor.execute(
+                        """
+                        INSERT INTO densitydescriptions (value)
+                        VALUES (?)
+                    """,
+                        (density_desc,),
+                    )
+                    density_desc_id = cursor.lastrowid
+                    density_desc_id_map[density_desc_lower] = density_desc_id
+
+            # Ensure top_depth is not None (required field)
+            if top_depth is None or pd.isna(top_depth):
+                continue  # Skip rows without depth (shouldn't happen for GEOL data)
+
+            density_data.append(
+                (
+                    report.borehole_id,
+                    float(top_depth),
+                    float(bottom_depth)
+                    if bottom_depth is not None and pd.notna(bottom_depth)
+                    else None,
+                    density_desc_id,
+                    float(density_index_min)
+                    if density_index_min is not None and pd.notna(density_index_min)
+                    else None,
+                    float(density_index_max)
+                    if density_index_max is not None and pd.notna(density_index_max)
+                    else None,
+                )
+            )
+
+    if density_data:
+        cursor.executemany(
+            """
+            INSERT INTO densitymeasurements 
+            (spt_id, top_depth_m, bottom_depth_m, density_description_id, density_index_min, density_index_max)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            density_data,
+        )
+
+    # Insert SPTDensityIndex (general density index ranges from ADDL_CNDN, no depth)
+    spt_density_index_data = []
+    for report in reports:
+        for _, row in report.spt_density_indices.iterrows():
+            density_index_min = row.get("density_index_min")
+            density_index_max = row.get("density_index_max")
+
+            if density_index_min is not None and density_index_max is not None:
+                spt_density_index_data.append(
+                    (
+                        report.borehole_id,
+                        float(density_index_min),
+                        float(density_index_max),
+                    )
+                )
+
+    if spt_density_index_data:
+        cursor.executemany(
+            """
+            INSERT INTO sptdensityindex 
+            (spt_id, density_index_min, density_index_max)
+            VALUES (?, ?, ?)
+        """,
+            spt_density_index_data,
+        )
 
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
     for report in reports:

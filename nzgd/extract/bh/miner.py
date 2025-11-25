@@ -492,6 +492,21 @@ def _analyze_text_objects(
         source_file=report,
         spt_measurements=df,
         soil_measurements=soil_measurements,
+        density_measurements=pd.DataFrame(
+            columns=[
+                "top_depth_m",
+                "bottom_depth_m",
+                "density_description",
+                "density_index_min",
+                "density_index_max",
+            ]
+        ),
+        spt_density_indices=pd.DataFrame(
+            columns=[
+                "density_index_min",
+                "density_index_max",
+            ]
+        ),
     )
 
 
@@ -545,6 +560,99 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
     soil_type_id_map = {
         value: soil_type_id for soil_type_id, value in cursor.fetchall()
     }
+
+    # Build density description lookup map (get existing density descriptions)
+    cursor.execute("SELECT id, value FROM densitydescriptions")
+    density_desc_id_map = {
+        value.lower(): density_desc_id for density_desc_id, value in cursor.fetchall()
+    }
+
+    # Insert DensityMeasurements (depth-specific from GEOL)
+    # Note: PDF extraction doesn't extract density data, so this will be empty
+    density_data = []
+    for report in reports:
+        for _, row in report.density_measurements.iterrows():
+            top_depth = row.get("top_depth_m")
+            bottom_depth = row.get("bottom_depth_m")
+            density_desc = row.get("density_description")
+            density_index_min = row.get("density_index_min")
+            density_index_max = row.get("density_index_max")
+
+            # Convert density description to ID if present
+            density_desc_id = None
+            if density_desc and pd.notna(density_desc):
+                density_desc_lower = str(density_desc).lower().strip()
+                if density_desc_lower in density_desc_id_map:
+                    density_desc_id = density_desc_id_map[density_desc_lower]
+                else:
+                    # Insert new density description if not found (unlikely for PDF data)
+                    cursor.execute(
+                        """
+                        INSERT INTO densitydescriptions (value)
+                        VALUES (?)
+                    """,
+                        (density_desc,),
+                    )
+                    density_desc_id = cursor.lastrowid
+                    density_desc_id_map[density_desc_lower] = density_desc_id
+
+            # Ensure top_depth is not None (required field)
+            if top_depth is None or pd.isna(top_depth):
+                continue  # Skip rows without depth
+
+            density_data.append(
+                (
+                    report.borehole_id,
+                    float(top_depth),
+                    float(bottom_depth)
+                    if bottom_depth is not None and pd.notna(bottom_depth)
+                    else None,
+                    density_desc_id,
+                    float(density_index_min)
+                    if density_index_min is not None and pd.notna(density_index_min)
+                    else None,
+                    float(density_index_max)
+                    if density_index_max is not None and pd.notna(density_index_max)
+                    else None,
+                )
+            )
+
+    if density_data:
+        cursor.executemany(
+            """
+            INSERT INTO densitymeasurements 
+            (spt_id, top_depth_m, bottom_depth_m, density_description_id, density_index_min, density_index_max)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            density_data,
+        )
+
+    # Insert SPTDensityIndex (general density index ranges from ADDL_CNDN, no depth)
+    # Note: PDF extraction doesn't extract density data, so this will be empty
+    spt_density_index_data = []
+    for report in reports:
+        for _, row in report.spt_density_indices.iterrows():
+            density_index_min = row.get("density_index_min")
+            density_index_max = row.get("density_index_max")
+
+            if density_index_min is not None and density_index_max is not None:
+                spt_density_index_data.append(
+                    (
+                        report.borehole_id,
+                        float(density_index_min),
+                        float(density_index_max),
+                    )
+                )
+
+    if spt_density_index_data:
+        cursor.executemany(
+            """
+            INSERT INTO sptdensityindex 
+            (spt_id, density_index_min, density_index_max)
+            VALUES (?, ?, ?)
+        """,
+            spt_density_index_data,
+        )
 
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
     for report in reports:

@@ -151,6 +151,16 @@ class SoilTypes(BaseModel):
     """str: The name of the soil type."""
 
 
+class DensityDescriptions(BaseModel):
+    """Represents normalized density description terms."""
+
+    id = IntegerField(primary_key=True)
+    """int: The unique identifier for the density description."""
+
+    value = TextField()
+    """str: The density description term (e.g., 'dense', 'medium dense', 'very dense')."""
+
+
 class NZGDRecord(BaseModel):
     """Represents a New Zealand Geotechnical Database (NZGD) record."""
 
@@ -279,6 +289,63 @@ class SPTMeasurements(BaseModel):
 
     ISPT_NVAL = IntegerField(null=True)
     """int: The number of blows extracted from the ISPT_NVAL field of an AGS file."""
+
+
+class DensityMeasurements(BaseModel):
+    """Represents depth-specific density measurements extracted from GEOL table.
+
+    This table stores density information that is associated with specific depth
+    intervals (from GEOL table). It can contain both descriptive terms and
+    density index ranges, both tied to specific soil layers.
+    """
+
+    density_measurement_id = IntegerField(primary_key=True)
+    """int: The unique identifier for the density measurement."""
+
+    spt_id = ForeignKeyField(SPTReport, backref="density_measurements")
+    """int: The foreign key referencing the associated SPT report."""
+
+    top_depth_m = FloatField()
+    """float: The top depth of the layer with this density measurement."""
+
+    bottom_depth_m = FloatField(null=True)
+    """float: The bottom depth of the layer with this density measurement.
+    Null if only top depth is available."""
+
+    density_description_id = ForeignKeyField(
+        DensityDescriptions, null=True, backref="density_measurements"
+    )
+    """int: The foreign key referencing the density description term.
+    Null if only density index range is available."""
+
+    density_index_min = FloatField(null=True)
+    """float: The minimum value of the density index range (e.g., 35 for '35-65').
+    Null if only descriptive term is available."""
+
+    density_index_max = FloatField(null=True)
+    """float: The maximum value of the density index range (e.g., 65 for '35-65').
+    Null if only descriptive term is available."""
+
+
+class SPTDensityIndex(BaseModel):
+    """Represents general density index ranges from ADDL_CNDN table.
+
+    This table stores density index ranges that are not associated with specific
+    depth intervals. These typically come from the ADDL_CNDN (Additional Conditions)
+    table and represent site-wide or borehole-wide density characteristics.
+    """
+
+    spt_density_index_id = IntegerField(primary_key=True)
+    """int: The unique identifier for the SPT density index record."""
+
+    spt_id = ForeignKeyField(SPTReport, backref="spt_density_indices")
+    """int: The foreign key referencing the associated SPT report."""
+
+    density_index_min = FloatField()
+    """float: The minimum value of the density index range (e.g., 35 for '35-65')."""
+
+    density_index_max = FloatField()
+    """float: The maximum value of the density index range (e.g., 65 for '35-65')."""
 
 
 class CPTReport(BaseModel):
@@ -475,6 +542,7 @@ def initialize_db():
                 SoilMeasurements,
                 SoilMeasurementSoilType,
                 SPTMeasurements,
+                DensityMeasurements,
                 CPTReport,
                 CPTMeasurements,
                 CPTVs30Estimates,
