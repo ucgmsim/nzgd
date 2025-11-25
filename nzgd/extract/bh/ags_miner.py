@@ -165,6 +165,13 @@ def _try_single_prefix_match(
     When a prefix appears in InvestigationId and only one LOCA_ID has that prefix,
     use that LOCA_ID.
 
+    This fallback method was developed to address problematic NZGD IDs where
+    simple substring matching failed:
+    - NZGD ID 31205 (InvestigationId: "91 River Road BH, HAs, DCPs") → BH01
+      In this case, if only one of the LOCA_IDs has "BH" prefix, that one is selected.
+    - NZGD ID 97660 (InvestigationId: "BH-t2") → BH2
+      In this case, if only one of the LOCA_IDs has "BH" prefix, that one is selected.
+
     Parameters
     ----------
     loca_ids_with_counts : list[tuple[str, int]]
@@ -207,6 +214,11 @@ def _try_bh_t_pattern_match(
 
     When InvestigationId has pattern "BH-tX" or "BH_tX", extract number X and
     find LOCA_ID with same number (preferring BH prefix).
+
+    This fallback method was developed to address problematic NZGD IDs where
+    simple substring matching failed:
+    - NZGD ID 99137 (InvestigationId: "BH-t5") → BH5
+      (matches "BH-t5" in InvestigationId to "BH5" in LOCA_IDs)
 
     Parameters
     ----------
@@ -256,6 +268,13 @@ def _try_bracket_pattern_match(
 
     When InvestigationId has pattern "[PREFIX_BHX]" or "[PREFIX-BHX]", extract
     prefix and number, find LOCA_ID with same prefix and number.
+
+    This fallback method is a general-purpose strategy for matching bracket patterns
+    in InvestigationId. It extracts content from brackets and attempts to match
+    prefixes and numbers to LOCA_IDs. Note that for the 7 problematic NZGD IDs
+    (124644, 124645, 124646, 124647), the context-based match runs first and handles
+    these cases before bracket pattern matching is attempted. This method serves as
+    a fallback for cases with brackets but no recognized location keywords.
 
     Parameters
     ----------
@@ -317,6 +336,17 @@ def _try_context_based_match(
 
     When InvestigationId contains location/context keywords that map to prefixes,
     use that prefix along with number from bracket.
+
+    This fallback method was developed to address problematic NZGD IDs where
+    simple substring matching failed:
+    - NZGD ID 124644 (InvestigationId: "Michael Fowler Centre GENZWELL16138AA [MF_BH3]")
+      → MF_Boring3 (matches "Michael Fowler" keyword to "MF" prefix)
+    - NZGD ID 124645 (InvestigationId: "Michael Fowler Centre GENZWELL16138AA [MF_BH4]")
+      → MF_Boring4 (matches "Michael Fowler" keyword to "MF" prefix)
+    - NZGD ID 124646 (InvestigationId: "Michael Fowler Centre GENZWELL16138AA [MF_BH5]")
+      → MF_Boring5 (matches "Michael Fowler" keyword to "MF" prefix)
+    - NZGD ID 124647 (InvestigationId: "Wellington Town Hall GENZWELL16138AA [Aurecon-BH02]")
+      → TH_BH02 (matches "Town Hall" keyword to "TH" prefix)
 
     Parameters
     ----------
@@ -387,10 +417,22 @@ def _find_matching_loca_from_investigation(
     prioritizing LOCA_IDs that appear in more tables (ISPT and/or GEOL).
 
     If simple substring matching fails, alternative strategies are tried as fallbacks:
-    1. Single prefix match
-    2. BH-t pattern matching
-    3. Bracket pattern matching
-    4. Context-based matching
+    1. Context-based matching (e.g., "Town Hall" → "TH", "Michael Fowler" → "MF")
+    2. Single prefix match (e.g., NZGD IDs 31205, 97660) - if only one LOCA_ID has
+       a prefix that appears in InvestigationId, that one is selected
+    3. BH-t pattern matching (e.g., "BH-t5" → "BH5" for NZGD ID 99137)
+    4. Bracket pattern matching
+
+    These fallback methods successfully match all 7 previously problematic NZGD IDs:
+    - 31205 ("91 River Road BH, HAs, DCPs") → BH01
+      (only one LOCA_ID has "BH" prefix, so that one is selected)
+    - 97660 ("BH-t2") → BH2
+      (only one LOCA_ID has "BH" prefix, so that one is selected)
+    - 99137 ("BH-t5") → BH5
+    - 124644 ("Michael Fowler Centre GENZWELL16138AA [MF_BH3]") → MF_Boring3
+    - 124645 ("Michael Fowler Centre GENZWELL16138AA [MF_BH4]") → MF_Boring4
+    - 124646 ("Michael Fowler Centre GENZWELL16138AA [MF_BH5]") → MF_Boring5
+    - 124647 ("Wellington Town Hall GENZWELL16138AA [Aurecon-BH02]") → TH_BH02
 
     Parameters
     ----------
@@ -822,7 +864,6 @@ def _build_loca_diagnostics(
     if diagnostics.has_multiple and unique_ids:
         diagnostics.all_loca_ids = "|".join(unique_ids)
         # Find matching LOCA_ID by checking if it appears in InvestigationId
-        print()
         matched_loca_id = _find_matching_loca_from_investigation(
             loca_ids_with_counts, investigation_id
         )
@@ -860,7 +901,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     tables, headings = load_ags_tables(report)
 
     investigation_id = _get_investigation_id(borehole_id)
-    print()
+
     diagnostics = _build_loca_diagnostics(
         tables,
         investigation_id,
