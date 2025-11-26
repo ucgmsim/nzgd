@@ -55,7 +55,7 @@ def copy_spt_reports(
 
     # Get all SPT reports from temporary database
     temp_cursor.execute(
-        "SELECT spt_id, nzgd_id, efficiency, extracted_gwl_m, gwl_residual_m, source_file FROM sptreport"
+        "SELECT spt_id, nzgd_id, efficiency, extracted_gwl_m, source_file FROM sptreport"
     )
     temp_reports = temp_cursor.fetchall()
 
@@ -73,7 +73,6 @@ def copy_spt_reports(
             nzgd_id,
             efficiency,
             extracted_gwl_m,
-            gwl_residual_m,
             source_file,
         ) = temp_report
 
@@ -93,15 +92,14 @@ def copy_spt_reports(
         main_cursor.execute(
             """
             INSERT INTO sptreport 
-            (spt_id, nzgd_id, efficiency, extracted_gwl_m, gwl_residual_m, source_file)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (spt_id, nzgd_id, efficiency, extracted_gwl_m, source_file)
+            VALUES (?, ?, ?, ?, ?)
         """,
             (
                 new_spt_id,
                 nzgd_id,
                 efficiency,
                 extracted_gwl_m,
-                gwl_residual_m,
                 source_file if source_file else "",
             ),
         )
@@ -196,7 +194,7 @@ def copy_soil_measurements_and_types(
 
     # Get all soil measurements from temporary database
     temp_cursor.execute(
-        "SELECT soil_measurement_id, spt_id, top_depth_m FROM soilmeasurements"
+        "SELECT soil_measurement_id, spt_id, top_depth_m, bottom_depth_m FROM soilmeasurements"
     )
     temp_soil_measurements = temp_cursor.fetchall()
 
@@ -206,8 +204,10 @@ def copy_soil_measurements_and_types(
     )
     temp_soil_types = temp_cursor.fetchall()
 
-    # Create mapping from original soil_measurement_id to (spt_id, top_depth_m)
-    temp_measurement_map = {row[0]: (row[1], row[2]) for row in temp_soil_measurements}
+    # Create mapping from original soil_measurement_id to (spt_id, top_depth_m, bottom_depth_m)
+    temp_measurement_map = {
+        row[0]: (row[1], row[2], row[3]) for row in temp_soil_measurements
+    }
 
     # Create mapping from original soil_measurement_id to list of soil_type_ids
     temp_measurement_soil_types = {}
@@ -225,6 +225,7 @@ def copy_soil_measurements_and_types(
     for original_measurement_id, (
         original_spt_id,
         top_depth_m,
+        bottom_depth_m,
     ) in temp_measurement_map.items():
         if original_spt_id in spt_id_mapping:
             new_spt_id = spt_id_mapping[original_spt_id]
@@ -232,10 +233,10 @@ def copy_soil_measurements_and_types(
             # Insert into main database with new soil_measurement_id
             main_cursor.execute(
                 """
-                INSERT INTO soilmeasurements (soil_measurement_id, spt_id, top_depth_m)
-                VALUES (?, ?, ?)
+                INSERT INTO soilmeasurements (soil_measurement_id, spt_id, top_depth_m, bottom_depth_m)
+                VALUES (?, ?, ?, ?)
             """,
-                (next_measurement_id, new_spt_id, top_depth_m),
+                (next_measurement_id, new_spt_id, top_depth_m, bottom_depth_m),
             )
 
             # Store the mapping

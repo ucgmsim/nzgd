@@ -46,8 +46,8 @@ nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df = (
             "Longitude": "longitude",
             "CreatedOn": "investigation_date",
             "LastModifiedOn": "published_date",
-            "nlm_gwl_m": "model_gwl_nlm_m",
-            "nlm_gwl_stddev_m": "model_gwl_nlm_stddev_m",
+            "nlm_gwl_m": "model_gwl_nlm_2025_m",
+            "nlm_gwl_stddev_m": "model_gwl_nlm_2025_stddev_m",
         }
     )
 )
@@ -76,9 +76,9 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
             nz.longitude,
             nz.model_vs30_foster_2019,
             nz.model_vs30_stddev_foster_2019,
-            nz.model_gwl_westerhoff_2018,
-            nz.model_gwl_nlm_m,
-            nz.model_gwl_nlm_stddev_m,
+            nz.model_gwl_westerhoff_2018_m,
+            nz.model_gwl_nlm_2025_m,
+            nz.model_gwl_nlm_2025_stddev_m,
             nz.original_investigation_name,
             nz.investigation_date,
             nz.published_date,
@@ -112,9 +112,9 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
             nz.longitude,
             nz.model_vs30_foster_2019,
             nz.model_vs30_stddev_foster_2019,
-            nz.model_gwl_westerhoff_2018,
-            nz.model_gwl_nlm_m,
-            nz.model_gwl_nlm_stddev_m,
+            nz.model_gwl_westerhoff_2018_m,
+            nz.model_gwl_nlm_2025_m,
+            nz.model_gwl_nlm_2025_stddev_m,
             nz.original_investigation_name,
             nz.investigation_date,
             nz.published_date,
@@ -235,7 +235,7 @@ metadata_summary_from_db_df = pd.concat(
 metadata_summary_from_db_df = metadata_summary_from_db_df.drop(columns=["type"])
 
 metadata_summary_from_db_df = metadata_summary_from_db_df.drop(
-    columns=["cpt_id", "spt_id", "gwl_residual_m"]
+    columns=["cpt_id", "spt_id"]
 )
 
 

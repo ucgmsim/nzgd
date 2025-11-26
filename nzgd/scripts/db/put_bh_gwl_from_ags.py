@@ -34,39 +34,7 @@ def serialize_spt_gwl_data(
 
     cursor = conn.cursor()
 
-    # Step 1: Update gwl_residual_m for records that already have extracted_gwl_m
-    # but need their residual recalculated
-    records_with_gwl = sptreport_df[sptreport_df["extracted_gwl_m"].notna()]
-
-    # Only load the CSV file if there are records that need gwl_residual_m updated
-    if len(records_with_gwl) > 0:
-        index_df = pd.read_csv(constants.INDEX_FILE_PATH)
-
-        for _, spt_row in tqdm(
-            records_with_gwl.iterrows(),
-            total=len(records_with_gwl),
-            desc="Updating gwl_residual_m for existing records",
-        ):
-            # Find matching row in CSV where nzgd_id matches sptreport.nzgd_id
-            csv_match = index_df[index_df["nzgd_id"] == spt_row["nzgd_id"]]
-
-            if not csv_match.empty and pd.notna(
-                csv_match["model_gwl_westerhoff_2018"].iloc[0]
-            ):
-                model_gwl = csv_match["model_gwl_westerhoff_2018"].iloc[0]
-                extracted_gwl = spt_row["extracted_gwl_m"]
-                gwl_residual = extracted_gwl - model_gwl
-
-                cursor.execute(
-                    """
-                    UPDATE sptreport
-                    SET gwl_residual_m = ?
-                    WHERE spt_id = ?
-                    """,
-                    (gwl_residual, spt_row["spt_id"]),
-                )
-
-    # Step 2: Only write new values if extracted_gwl_m is NULL/empty
+    # Only write new values if extracted_gwl_m is NULL/empty
     for _, row in tqdm(
         metadata_df.iterrows(), total=metadata_df.shape[0], desc="Writing new GWL data"
     ):
@@ -77,10 +45,10 @@ def serialize_spt_gwl_data(
         cursor.execute(
             """
             UPDATE sptreport
-            SET extracted_gwl_m = ?, gwl_residual_m = ?
+            SET extracted_gwl_m = ?
             WHERE nzgd_id = ? AND extracted_gwl_m IS NULL
             """,
-            (row["extracted_gwl"], row["gwl_residual"], row["nzgd_id"]),
+            (row["extracted_gwl"], row["nzgd_id"]),
         )
 
 
@@ -96,7 +64,6 @@ if __name__ == "__main__":
     bh_gwl_df.rename(
         columns={
             "adopted_value": "extracted_gwl",
-            "measured_minus_model": "gwl_residual",
         },
         inplace=True,
     )

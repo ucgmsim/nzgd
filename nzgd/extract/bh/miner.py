@@ -501,12 +501,6 @@ def _analyze_text_objects(
                 "density_index_max",
             ]
         ),
-        spt_density_indices=pd.DataFrame(
-            columns=[
-                "density_index_min",
-                "density_index_max",
-            ]
-        ),
     )
 
 
@@ -627,33 +621,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             density_data,
         )
 
-    # Insert SPTDensityIndex (general density index ranges from ADDL_CNDN, no depth)
-    # Note: PDF extraction doesn't extract density data, so this will be empty
-    spt_density_index_data = []
-    for report in reports:
-        for _, row in report.spt_density_indices.iterrows():
-            density_index_min = row.get("density_index_min")
-            density_index_max = row.get("density_index_max")
-
-            if density_index_min is not None and density_index_max is not None:
-                spt_density_index_data.append(
-                    (
-                        report.borehole_id,
-                        float(density_index_min),
-                        float(density_index_max),
-                    )
-                )
-
-    if spt_density_index_data:
-        cursor.executemany(
-            """
-            INSERT INTO sptdensityindex 
-            (spt_id, density_index_min, density_index_max)
-            VALUES (?, ?, ?)
-        """,
-            spt_density_index_data,
-        )
-
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
     for report in reports:
         # Only insert SPT measurements if the DataFrame is not empty
@@ -672,14 +639,17 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         # Only process soil measurements if the DataFrame is not empty
         if not report.soil_measurements.empty:
             for _, row in report.soil_measurements.iterrows():
-                # Handle NaN/None values for top_depth
+                # Handle NaN/None values for top_depth and bottom_depth
                 top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
+                bottom_depth = None
+                if "bottom_depth" in row:
+                    bottom_depth = row["bottom_depth"] if pd.notna(row["bottom_depth"]) else None
                 cursor.execute(
                     """
-                                   INSERT INTO soilmeasurements (spt_id, top_depth_m)
-                                   VALUES (?, ?)
+                                   INSERT INTO soilmeasurements (spt_id, top_depth_m, bottom_depth_m)
+                                   VALUES (?, ?, ?)
                                """,
-                    (report.borehole_id, top_depth),
+                    (report.borehole_id, top_depth, bottom_depth),
                 )
                 measurement_id = cursor.lastrowid
                 for soil_type in row["soil_types"]:

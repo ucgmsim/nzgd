@@ -176,17 +176,25 @@ class NZGDRecord(BaseModel):
     longitude = FloatField()
     """float: The longitude coordinate of the investigation location."""
 
-    model_vs30_foster_2019 = FloatField(null=True)
+    model_vs30_foster_2019_km_per_s = FloatField(null=True)
     """float: The modelled Vs30 value from Foster et al. (2019), at this record's
     location."""
 
-    model_vs30_stddev_foster_2019 = FloatField(null=True)
+    model_vs30_stddev_foster_2019_km_per_s = FloatField(null=True)
     """float: The modelled Vs30 standard deviation from Foster et al. (2019), at this
     record's location."""
 
-    model_gwl_westerhoff_2018 = FloatField(null=True)
+    model_gwl_westerhoff_2018_m = FloatField(null=True)
     """float: The modelled ground water level from Westerhoff et al. (2018), at this
-    record's location."""
+    record's location, in meters."""
+
+    model_gwl_nlm_2025_m = FloatField(null=True)
+    """float: The modelled ground water level from the National Liquefaction Model (NLM) 2025,
+    at this record's location, in meters."""
+
+    model_gwl_nlm_2025_stddev_m = FloatField(null=True)
+    """float: The modelled ground water level standard deviation from the National
+    Liquefaction Model (NLM) 2025, at this record's location, in meters."""
 
     original_investigation_name = TextField(null=True)
     """str: The original reference for the record."""
@@ -213,8 +221,10 @@ class NZGDRecord(BaseModel):
         indexes = (
             # (column, ), (boolean for is unique, )
             (("nzgd_id",), True),
-            (("model_vs30_foster_2019",), False),
-            (("model_gwl_westerhoff_2018",), False),
+            (("model_vs30_foster_2019_km_per_s",), False),
+            (("model_gwl_westerhoff_2018_m",), False),
+            (("model_gwl_nlm_2025_m",), False),
+            (("model_gwl_nlm_2025_stddev_m",), False),
             (("region_id",), False),
             (("district_id",), False),
             (("city_id",), False),
@@ -237,11 +247,6 @@ class SPTReport(BaseModel):
     extracted_gwl_m = FloatField(null=True)
     """float: The extracted ground water level for the SPT (borehole) report."""
 
-    gwl_residual_m = FloatField(null=True)
-    """float: The residual (difference) between the extracted ground water level and
-    the corresponding value from the Westerhoff et al. (2018) national groundwater
-    level model."""
-
     source_file = TextField()
     """str: The source file of the extracted data."""
 
@@ -257,6 +262,9 @@ class SoilMeasurements(BaseModel):
 
     top_depth_m = FloatField()
     """float: The top depth of the soil layer."""
+
+    bottom_depth_m = FloatField(null=True)
+    """float: The bottom depth of the soil layer (if available)."""
 
 
 class SoilMeasurementSoilType(BaseModel):
@@ -312,10 +320,8 @@ class DensityMeasurements(BaseModel):
     """float: The bottom depth of the layer with this density measurement.
     Null if only top depth is available."""
 
-    density_description_id = ForeignKeyField(
-        DensityDescriptions, null=True, backref="density_measurements"
-    )
-    """int: The foreign key referencing the density description term.
+    density_keyword = TextField(null=True)
+    """str: The extracted density keyword with modifiers (e.g., 'very dense', 'loose', 'well compacted').
     Null if only density index range is available."""
 
     density_index_min = FloatField(null=True)
@@ -325,27 +331,6 @@ class DensityMeasurements(BaseModel):
     density_index_max = FloatField(null=True)
     """float: The maximum value of the density index range (e.g., 65 for '35-65').
     Null if only descriptive term is available."""
-
-
-class SPTDensityIndex(BaseModel):
-    """Represents general density index ranges from ADDL_CNDN table.
-
-    This table stores density index ranges that are not associated with specific
-    depth intervals. These typically come from the ADDL_CNDN (Additional Conditions)
-    table and represent site-wide or borehole-wide density characteristics.
-    """
-
-    spt_density_index_id = IntegerField(primary_key=True)
-    """int: The unique identifier for the SPT density index record."""
-
-    spt_id = ForeignKeyField(SPTReport, backref="spt_density_indices")
-    """int: The foreign key referencing the associated SPT report."""
-
-    density_index_min = FloatField()
-    """float: The minimum value of the density index range (e.g., 35 for '35-65')."""
-
-    density_index_max = FloatField()
-    """float: The maximum value of the density index range (e.g., 65 for '35-65')."""
 
 
 class CPTReport(BaseModel):
@@ -371,11 +356,6 @@ class CPTReport(BaseModel):
         null=True,
     )
     """int: The foreign key referencing the ground water level method."""
-
-    gwl_residual_m = FloatField(null=True)
-    """float: The residual (difference) between the extracted ground water level and
-    the corresponding value from the Westerhoff et al. (2018) national groundwater
-    level model."""
 
     tip_net_area_ratio = FloatField(null=True)
     """float: The tip net area ratio of the CPT."""

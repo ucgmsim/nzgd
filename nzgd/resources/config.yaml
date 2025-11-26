@@ -4,16 +4,15 @@ subdirectories:
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p3p5_20251125.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p4p2_20251127.db"
 
-temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p3p5_20251125.db"
-temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p3p5_20251125.db"
+temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p4p2_20251127.db"
+temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p4p2_20251127.db"
 
-spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p3p5_20251125.csv"
+spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p4p2_20251127.csv"
 
-all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values.csv"
-cpt_supplemental_values_filename: "test_v4_cpt_supplemental_values.csv"
-cpt_id_and_supplemental_values_filename: "test_v4_cpt_id_and_supplemental_values.csv"
+all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values_v0p4p2_20251127.csv"
+cpt_supplemental_values_filename: "cpt_supplemental_values_v0p4p2_20251127.csv"
 
 soil_type_unit_weights_filename: "soil_type_unit_weights.csv"
 
@@ -38,6 +37,14 @@ nzgd_TypeDisplay_values_for_CPTs:
   - "CPT - Cone Penetration Test"
 
 nzgd_source_data_dir: "/home/arr65/data/nzgd/downloads/nzgd_source_files"
+
+# Paths to groundwater level model GeoTIFF files
+westerhoff_2018_model_path: "/home/arr65/data/nzgd/resources/national_water_table_model_data_2022/nwt_wtd_NZ_20220825.tif"
+nlm_gwd_path: "/home/arr65/data/national_liquefaction_model/NLM files/v2025.0_rc4/GW/NLM_gwd.tif"
+nlm_gw_std_path: "/home/arr65/data/national_liquefaction_model/NLM files/v2025.0_rc4/GW/NLM_gw_std_wo_seasonal.tif"
+
+# Path to Foster et al. (2019) Vs30 model GeoTIFF file
+foster_2019_vs30_model_path: "/home/arr65/data/nzgd/resources/NSHM2022_NoG6G13/combined.tif"
 
 cpt_column_name_descriptions:
   Depth: "depth in m"
@@ -130,3 +137,45 @@ allowed_bounds_for_extracted_values:
   min_allowed_predrill_depth: 0
   max_allowed_tip_net_area_ratio: 1.0
   min_allowed_tip_net_area_ratio: 0.2
+
+
+# Density-related keywords (case-insensitive, lowercase)
+density_related_keywords:
+  - "compact"
+  - "compacted"
+  - "compaction"
+  - "compactor"
+  - "compressibility"
+  - "compressible"
+  - "consolidated"
+  - "consolidation"
+  - "dense"
+  - "densely packed"
+  - "density"
+  - "density index"
+  - "firm"
+  - "hard"
+  - "impermeable"
+  - "loose"
+  - "loosely"
+  - "loosely packed"
+  - "looser"
+  - "open"
+  - "packed"
+  - "packing"
+  - "permeable"
+  - "poorly compacted"
+  - "porous"
+  - "relative density"
+  - "soft"
+  - "softness"
+  - "solid"
+  - "stiff"
+  - "stiffness"
+  - "strongly compacted"
+  - "tight"
+  - "tightly"
+  - "tightly packed"
+  - "tightly-packed"
+  - "voids"
+  - "well compacted"

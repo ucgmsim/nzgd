@@ -45,14 +45,12 @@ def initialize_database_at_path(db_path: Path):
                     orm.TerminationReason,
                     orm.CPTGroundWaterLevelMethod,
                     orm.SoilTypes,
-                    orm.DensityDescriptions,
                     orm.NZGDRecord,
                     orm.SPTReport,
                     orm.SoilMeasurements,
                     orm.SoilMeasurementSoilType,
                     orm.SPTMeasurements,
                     orm.DensityMeasurements,
-                    orm.SPTDensityIndex,
                     orm.CPTReport,
                     orm.CPTMeasurements,
                     orm.CPTVs30Estimates,
@@ -260,64 +258,6 @@ def serialize_ground_water_level_method_table(
         )
 
 
-def serialize_density_descriptions_table(conn: sqlite3.Connection):
-    """Serialize density description terms to the SQLite database.
-
-    Pre-populates common density description terms. Additional terms can be
-    added dynamically during extraction.
-
-    Parameters
-    ----------
-    conn : sqlite3.Connection
-        A connection object to the SQLite database.
-
-    Returns
-    -------
-    None
-        This function does not return anything.
-
-    """
-    cursor = conn.cursor()
-
-    # Common density description terms (ordered from most specific to least specific)
-    # These match the patterns in ags_miner.py
-    common_density_terms = [
-        "very high density",
-        "very high dense",
-        "very dense",
-        "high density",
-        "high dense",
-        "medium high density",
-        "medium high dense",
-        "medium to high density",
-        "medium to high dense",
-        "dense to very dense",
-        "loose to medium dense",
-        "loose to dense",
-        "medium to low density",
-        "medium to low dense",
-        "medium density",
-        "medium dense",
-        "very low density",
-        "very low dense",
-        "low density",
-        "low dense",
-        "dense",  # Standalone dense - must come last
-    ]
-
-    # Assign IDs starting from 1
-    for idx, term in enumerate(common_density_terms, start=1):
-        cursor.execute(
-            """
-            INSERT OR IGNORE INTO densitydescriptions (id, value)
-            VALUES (?, ?)
-        """,
-            (idx, term),
-        )
-
-    conn.commit()
-
-
 def serialize_location_name_tables(metadata_df: pd.DataFrame, conn: sqlite3.Connection):
     """Serialize location strings to the SQLite database.
 
@@ -390,7 +330,6 @@ def populate_database(db_path: Path, metadata_df: pd.DataFrame):
         serialize_spt_soil_type_table(db)
         serialize_cpt_termination_reason_table(db)
         serialize_ground_water_level_method_table(db)
-        serialize_density_descriptions_table(db)
 
         serialize_correlation_tables(db)
 

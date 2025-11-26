@@ -56,12 +56,6 @@ def serialize_cpt_reports(
                 cpt_id_df_row["gwl_method"]
             ]
 
-        # Get the Westerhoff 2018 model GWL for this nzgd_id
-        model_gwl = nzgd_index_with_metadata_from_coordinates[
-            nzgd_index_with_metadata_from_coordinates["nzgd_id"]
-            == cpt_id_df_row["nzgd_id"]
-        ]["model_gwl_westerhoff_2018"].iloc[0]
-
         _, source_file_name, source_sheet_name = cpt_id_df_row[
             "nzgd_id_AND_filename_AND_sheetname"
         ].split("_AND_")
@@ -127,11 +121,11 @@ def serialize_cpt_reports(
         cursor.execute(
             """
             INSERT OR REPLACE INTO cptreport (
-                cpt_id, nzgd_id, max_depth_m, min_depth_m, extracted_gwl_m, gwl_method_id, gwl_residual_m,
+                cpt_id, nzgd_id, max_depth_m, min_depth_m, extracted_gwl_m, gwl_method_id,
                 tip_net_area_ratio, predrill_depth_m, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
                 did_explicit_unit_conversion, did_inferred_unit_conversion, source_file
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cpt_id_df_row["cpt_id"],
@@ -140,7 +134,6 @@ def serialize_cpt_reports(
                 min_depth,
                 cpt_id_df_row["ground_water_level"],
                 gwl_method_id,
-                cpt_id_df_row["ground_water_level"] - model_gwl,
                 cpt_id_df_row["tip_net_area_ratio"],
                 cpt_id_df_row["predrill_depth"],
                 termination_reason_id,
