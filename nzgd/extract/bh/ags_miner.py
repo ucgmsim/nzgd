@@ -953,7 +953,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         if spt_table["ISPT_MAIN"].eq("").all() and spt_table["ISPT_NVAL"].eq("").all():
             spt_table = pd.DataFrame(columns=desired_ispt_columns)
             warnings.warn(
-                f"No SPT ISPT_MAIN values found in {report}, creating empty SPT measurements"
+                f"No SPT ISPT_MAIN or ISPT_NVAL values found in {report}, creating empty SPT measurements"
             )
 
     # Initialize geology table
