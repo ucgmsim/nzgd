@@ -61,6 +61,8 @@ import tqdm
 import typer
 
 from nzgd.constants import (
+    DENSITY_MODIFIERS,
+    DENSITY_RELATED_KEYWORDS,
     INDEX_FILE_PATH,
     MAX_ALLOWED_GWL,
     MIN_ALLOWED_GWL,
@@ -624,10 +626,12 @@ def _filter_by_investigation(
 
 
 def _extract_density_from_description(description: str) -> list[str]:
-    """Extract density descriptions from a soil description string.
+    """Extract density-related keywords from a soil description string.
 
+    Extracts all density-related keywords from DENSITY_RELATED_KEYWORDS along with
+    their modifiers (e.g., "very", "high", "low", "medium", "well", "poorly", etc.).
     Patterns are matched in order from most specific to least specific to avoid
-    double-counting (e.g., "medium dense" is matched before standalone "dense").
+    double-counting (e.g., "very dense" is matched before standalone "dense").
 
     Parameters
     ----------
@@ -637,7 +641,7 @@ def _extract_density_from_description(description: str) -> list[str]:
     Returns
     -------
     list[str]
-        List of density descriptions found (e.g., ['medium dense', 'dense']).
+        List of density keywords found with modifiers (e.g., ['very dense', 'loose', 'well compacted']).
         Compound phrases are prioritized over standalone terms.
     """
     if pd.isna(description) or not description:
@@ -645,52 +649,59 @@ def _extract_density_from_description(description: str) -> list[str]:
 
     description_str = str(description).lower()
 
-    # Common density patterns (ordered from most specific to least specific)
-    # IMPORTANT: Order matters - compound phrases must come before standalone terms
-    patterns = [
-        r"very\s+high\s+density",
-        r"very\s+high\s+dense",
-        r"medium\s+to\s+high\s+density",
-        r"medium\s+to\s+high\s+dense",
-        r"medium\s+high\s+density",
-        r"medium\s+high\s+dense",
-        r"dense\s+to\s+very\s+dense",
-        r"loose\s+to\s+medium\s+dense",
-        r"loose\s+to\s+dense",
-        r"medium\s+to\s+low\s+density",
-        r"medium\s+to\s+low\s+dense",
-        r"very\s+dense",
-        r"medium\s+density",
-        r"medium\s+dense",  # Must come before standalone "dense"
-        r"high\s+density",
-        r"high\s+dense",
-        r"very\s+low\s+density",
-        r"very\s+low\s+dense",
-        r"low\s+density",
-        r"low\s+dense",
-        r"\bdense\b",  # Standalone "dense" - must come last to avoid matching compound phrases
+    # Build patterns: (pattern_regex, expected_output_text)
+    patterns = []
+
+    # Separate single-word and multi-word keywords
+    single_word_keywords = [
+        kw for kw in DENSITY_RELATED_KEYWORDS if " " not in kw and "-" not in kw
     ]
+    multi_word_keywords = [
+        kw for kw in DENSITY_RELATED_KEYWORDS if " " in kw or "-" in kw
+    ]
+
+    # First, add patterns with modifiers + single-word keywords (most specific)
+    for modifier_pattern, modifier_text in DENSITY_MODIFIERS:
+        for keyword in single_word_keywords:
+            keyword_escaped = re.escape(keyword)
+            pattern = rf"{modifier_pattern}\s+{keyword_escaped}\b"
+            patterns.append((pattern, f"{modifier_text} {keyword}"))
+
+    # Then add multi-word keywords (they may already contain modifiers)
+    for keyword in multi_word_keywords:
+        keyword_escaped = re.escape(keyword)
+        pattern = rf"{keyword_escaped}"
+        patterns.append((pattern, keyword))
+
+    # Finally, add standalone single-word keywords (least specific)
+    for keyword in single_word_keywords:
+        keyword_escaped = re.escape(keyword)
+        pattern = rf"\b{keyword_escaped}\b"
+        patterns.append((pattern, keyword))
 
     found_phrases = []
     matched_positions = set()  # Track positions to avoid overlapping matches
 
-    for pattern in patterns:
+    # Sort patterns by length (longest first) to prioritize more specific matches
+    patterns.sort(key=lambda x: len(x[0]), reverse=True)
+
+    for pattern, expected_text in patterns:
         matches = re.finditer(pattern, description_str, re.IGNORECASE)
         for match in matches:
             start_pos = match.start()
             end_pos = match.end()
 
-            # Check if this position overlaps with a previously matched compound phrase
+            # Check if this position overlaps with a previously matched phrase
             overlaps = any(
                 start_pos < prev_end and end_pos > prev_start
                 for prev_start, prev_end in matched_positions
             )
 
             if not overlaps:
-                phrase = match.group().strip()
-                # Normalize whitespace
-                phrase = re.sub(r"\s+", " ", phrase)
-                found_phrases.append(phrase)
+                # Extract the actual matched text and normalize whitespace
+                matched_text = match.group().strip()
+                matched_text = re.sub(r"\s+", " ", matched_text)
+                found_phrases.append(matched_text)
                 matched_positions.add((start_pos, end_pos))
 
     return found_phrases
@@ -707,7 +718,7 @@ def _extract_density_index_ranges(
     Parameters
     ----------
     description : str
-        Soil description text (e.g., from GEOL_DESC or ADDL_CNDN).
+        Soil description text (e.g., from GEOL_DESC or ADDL).
 
     Returns
     -------
@@ -917,7 +928,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         "ISPT_WAT",
         "ISPT_ERAT",
     ]
-    geology_columns = ["LOCA_ID", "GEOL_TOP", "GEOL_DESC"]
+    geology_columns = ["LOCA_ID", "GEOL_TOP", "GEOL_BASE", "GEOL_DESC"]
     desired_ispt_columns = [
         "LOCA_ID",
         "Depth",
@@ -959,21 +970,17 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         ]
     )
 
-    # Initialize general density index ranges (from ADDL_CNDN, no depth)
-    spt_density_indices = pd.DataFrame(
-        columns=[
-            "density_index_min",
-            "density_index_max",
-        ]
-    )
-
     # Try to extract geology data if GEOL table exists
     if "GEOL" in tables and tables.get("GEOL") is not None:
         geol_df = tables["GEOL"][geology_columns].iloc[2:].copy()
         geol_df = _filter_by_investigation(geol_df, investigation_id, diagnostics)
-        geology_table = geol_df.rename(
-            columns={"GEOL_TOP": "top_depth", "GEOL_DESC": "soil_types"}
-        )
+
+        # Rename columns, including GEOL_BASE if it exists
+        rename_dict = {"GEOL_TOP": "top_depth", "GEOL_DESC": "soil_types"}
+        if "GEOL_BASE" in geol_df.columns:
+            rename_dict["GEOL_BASE"] = "bottom_depth"
+        geology_table = geol_df.rename(columns=rename_dict)
+
         geology_table["soil_types"] = geology_table["soil_types"].apply(
             extract_soil_report,
         )
@@ -989,8 +996,8 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             if "GEOL_BASE" in geol_df.columns:
                 bottom_depth = row.get("GEOL_BASE", None)
 
-            # Extract density descriptions (prioritizes compound phrases)
-            density_descriptions = _extract_density_from_description(description)
+            # Extract density keywords (with modifiers like "very", "high", etc.)
+            density_keywords = _extract_density_from_description(description)
 
             # Extract density index ranges
             density_index_ranges = _extract_density_index_ranges(description)
@@ -1013,13 +1020,13 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
 
             # Only add density rows if we have a valid top_depth (required field)
             if top_depth_float is not None:
-                # Create rows for density descriptions
-                for density_desc in density_descriptions:
+                # Create rows for density keywords
+                for density_keyword in density_keywords:
                     density_rows.append(
                         {
                             "top_depth_m": top_depth_float,
                             "bottom_depth_m": bottom_depth_float,
-                            "density_description": density_desc,
+                            "density_description": density_keyword,  # Column name kept for compatibility
                             "density_index_min": None,
                             "density_index_max": None,
                         }
@@ -1039,39 +1046,6 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
 
         if density_rows:
             density_measurements = pd.DataFrame(density_rows)
-
-    # Also check ADDL_CNDN table for density index information
-    if "ADDL_CNDN" in tables and tables.get("ADDL_CNDN") is not None:
-        addl_cndn_df = tables["ADDL_CNDN"].iloc[2:].copy()
-        addl_cndn_df = _filter_by_investigation(
-            addl_cndn_df, investigation_id, diagnostics
-        )
-
-        # Check if ADDL_CNDN has description column (might be ADDL_CNDN or similar)
-        desc_column = None
-        for col in addl_cndn_df.columns:
-            if "DESC" in col.upper() or "CNDN" in col.upper():
-                desc_column = col
-                break
-
-        if desc_column:
-            density_index_rows = []
-            for idx, row in addl_cndn_df.iterrows():
-                description = row.get(desc_column, "")
-
-                # Extract density index ranges from ADDL_CNDN (no depth associations)
-                density_index_ranges = _extract_density_index_ranges(description)
-
-                for index_range in density_index_ranges:
-                    density_index_rows.append(
-                        {
-                            "density_index_min": index_range["range_min"],
-                            "density_index_max": index_range["range_max"],
-                        }
-                    )
-
-            if density_index_rows:
-                spt_density_indices = pd.DataFrame(density_index_rows)
 
     efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
     groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
@@ -1128,7 +1102,6 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             spt_measurements=spt_table,
             soil_measurements=geology_table,
             density_measurements=density_measurements,
-            spt_density_indices=spt_density_indices,
         ),
         log_row=diagnostics.to_log_row(),
     )
@@ -1216,39 +1189,22 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         value: soil_type_id for soil_type_id, value in cursor.fetchall()
     }
 
-    # Build density description lookup map (get or insert density descriptions)
-    cursor.execute("SELECT id, value FROM densitydescriptions")
-    density_desc_id_map = {
-        value.lower(): density_desc_id for density_desc_id, value in cursor.fetchall()
-    }
-
     # Insert DensityMeasurements (depth-specific from GEOL)
     density_data = []
     for report in reports:
         for _, row in report.density_measurements.iterrows():
             top_depth = row.get("top_depth_m")
             bottom_depth = row.get("bottom_depth_m")
-            density_desc = row.get("density_description")
+            density_keyword = row.get(
+                "density_description"
+            )  # Still using same column name in DataFrame
             density_index_min = row.get("density_index_min")
             density_index_max = row.get("density_index_max")
 
-            # Convert density description to ID if present
-            density_desc_id = None
-            if density_desc and pd.notna(density_desc):
-                density_desc_lower = str(density_desc).lower().strip()
-                if density_desc_lower in density_desc_id_map:
-                    density_desc_id = density_desc_id_map[density_desc_lower]
-                else:
-                    # Insert new density description if not found
-                    cursor.execute(
-                        """
-                        INSERT INTO densitydescriptions (value)
-                        VALUES (?)
-                    """,
-                        (density_desc,),
-                    )
-                    density_desc_id = cursor.lastrowid
-                    density_desc_id_map[density_desc_lower] = density_desc_id
+            # Store density keyword directly as text (no normalization)
+            density_keyword_str = None
+            if density_keyword and pd.notna(density_keyword):
+                density_keyword_str = str(density_keyword).strip()
 
             # Ensure top_depth is not None (required field)
             if top_depth is None or pd.isna(top_depth):
@@ -1261,7 +1217,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                     float(bottom_depth)
                     if bottom_depth is not None and pd.notna(bottom_depth)
                     else None,
-                    density_desc_id,
+                    density_keyword_str,
                     float(density_index_min)
                     if density_index_min is not None and pd.notna(density_index_min)
                     else None,
@@ -1275,36 +1231,10 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         cursor.executemany(
             """
             INSERT INTO densitymeasurements 
-            (spt_id, top_depth_m, bottom_depth_m, density_description_id, density_index_min, density_index_max)
+            (spt_id, top_depth_m, bottom_depth_m, density_keyword, density_index_min, density_index_max)
             VALUES (?, ?, ?, ?, ?, ?)
         """,
             density_data,
-        )
-
-    # Insert SPTDensityIndex (general density index ranges from ADDL_CNDN, no depth)
-    spt_density_index_data = []
-    for report in reports:
-        for _, row in report.spt_density_indices.iterrows():
-            density_index_min = row.get("density_index_min")
-            density_index_max = row.get("density_index_max")
-
-            if density_index_min is not None and density_index_max is not None:
-                spt_density_index_data.append(
-                    (
-                        report.borehole_id,
-                        float(density_index_min),
-                        float(density_index_max),
-                    )
-                )
-
-    if spt_density_index_data:
-        cursor.executemany(
-            """
-            INSERT INTO sptdensityindex 
-            (spt_id, density_index_min, density_index_max)
-            VALUES (?, ?, ?)
-        """,
-            spt_density_index_data,
         )
 
     # Insert SPTMeasurements and SPTMeasurementSoilTypes
@@ -1338,14 +1268,19 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             for _, row in report.soil_measurements.iterrows():
                 if not row["soil_types"]:
                     continue
-                # Handle NaN/None values for top_depth
+                # Handle NaN/None values for top_depth and bottom_depth
                 top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
+                bottom_depth = None
+                if "bottom_depth" in row:
+                    bottom_depth = (
+                        row["bottom_depth"] if pd.notna(row["bottom_depth"]) else None
+                    )
                 cursor.execute(
                     """
-                                   INSERT INTO soilmeasurements (spt_id, top_depth_m)
-                                   VALUES (?, ?)
+                                   INSERT INTO soilmeasurements (spt_id, top_depth_m, bottom_depth_m)
+                                   VALUES (?, ?, ?)
                                """,
-                    (report.borehole_id, top_depth),
+                    (report.borehole_id, top_depth, bottom_depth),
                 )
                 measurement_id = cursor.lastrowid
                 for soil_type in row["soil_types"]:

@@ -38,10 +38,6 @@ ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME = CONFIG[
 ]
 CPT_SUPPLEMENTAL_VALUES_FILENAME = CONFIG["cpt_supplemental_values_filename"]
 
-CPT_IDS_AND_SUPPLEMENTAL_VALUES_FILENAME = CONFIG[
-    "cpt_id_and_supplemental_values_filename"
-]
-
 NZGD_SOURCE_DATA_DIR = Path(
     CONFIG["nzgd_source_data_dir"],
 )
@@ -52,6 +48,14 @@ TEMP_SPT_AGS_DB_PATH = Path(CONFIG["temp_spt_ags_db"])
 TEMP_SPT_PDF_DB_PATH = Path(CONFIG["temp_spt_pdf_db"])
 
 SPT_AGS_LOG_FILE_PATH = Path(CONFIG["spt_ags_log_file_path"])
+
+# Paths to groundwater level model GeoTIFF files
+WESTERHOFF_2018_MODEL_PATH = Path(CONFIG["westerhoff_2018_model_path"])
+NLM_GWD_PATH = Path(CONFIG["nlm_gwd_path"])
+NLM_GW_STD_PATH = Path(CONFIG["nlm_gw_std_path"])
+
+# Path to Foster et al. (2019) Vs30 model GeoTIFF file
+FOSTER_2019_VS30_MODEL_PATH = Path(CONFIG["foster_2019_vs30_model_path"])
 
 # Get relevant file extensions from the configuration file
 FILE_EXTENSIONS = CONFIG["file_extensions"]
@@ -713,6 +717,63 @@ DEFAULT_SPT_EFFICIENCY_PERCENT = CONFIG["default_spt_efficiency_percent"]
 DEFAULT_BOREHOLE_DIAMETER_mm = CONFIG["default_borehole_diameter_mm"]
 BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m = CONFIG[
     "buffer_below_lowest_measurement_depth_m"
+]
+
+# Density-related keywords found in AGS files (loaded from config.yaml)
+DENSITY_RELATED_KEYWORDS = CONFIG["density_related_keywords"]
+
+# Density keyword modifiers (ordered from most specific to least specific)
+# Each tuple contains (regex_pattern, display_text)
+# These modifiers can appear before density keywords to create compound phrases
+DENSITY_MODIFIERS = [
+    # Multi-word intensity modifiers (most specific)
+    (r"very\s+high", "very high"),
+    (r"very\s+low", "very low"),
+    (r"very\s+well", "very well"),
+    (r"very\s+poorly", "very poorly"),
+    (r"medium\s+to\s+high", "medium to high"),
+    (r"medium\s+to\s+low", "medium to low"),
+    (r"medium\s+high", "medium high"),
+    (r"loose\s+to\s+medium", "loose to medium"),
+    (r"loose\s+to", "loose to"),
+    (r"dense\s+to\s+very", "dense to very"),
+    # Single-word intensity modifiers
+    (r"very", "very"),
+    (r"extremely", "extremely"),
+    (r"highly", "highly"),
+    (r"moderately", "moderately"),
+    (r"slightly", "slightly"),
+    (r"somewhat", "somewhat"),
+    (r"quite", "quite"),
+    (r"rather", "rather"),
+    (r"fairly", "fairly"),
+    (r"high", "high"),
+    (r"medium", "medium"),
+    (r"low", "low"),
+    # Compaction/consolidation quality modifiers
+    (r"well", "well"),
+    (r"poorly", "poorly"),
+    (r"strongly", "strongly"),
+    (r"lightly", "lightly"),
+    (r"heavily", "heavily"),
+    (r"fully", "fully"),
+    (r"partially", "partially"),
+    (r"completely", "completely"),
+    (r"incompletely", "incompletely"),
+    (r"properly", "properly"),
+    (r"improperly", "improperly"),
+    (r"over", "over"),
+    (r"under", "under"),
+    # Packing/spacing modifiers
+    (r"tightly", "tightly"),
+    (r"loosely", "loosely"),
+    (r"densely", "densely"),
+    (r"sparsely", "sparsely"),
+    (r"closely", "closely"),
+    # Consistency/stiffness modifiers
+    (r"firmly", "firmly"),
+    (r"stiffly", "stiffly"),
+    (r"softly", "softly"),
 ]
 
 WATER_UNIT_WEIGHT_kN_m3 = 9.81
