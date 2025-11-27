@@ -47,11 +47,26 @@ def load_ags_tables(
     except AGS4Error as exc:
         logger.debug("Standard AGS4 parsing failed for %s: %s", filepath, exc)
     except Exception as exc:  # pragma: no cover - defensive
-        logger.warning(
-            "Unexpected error parsing %s with python_ags4: %s", filepath, exc
-        )
+        # Don't log warning here - will only warn if fallback parser also fails
+        logger.debug("Unexpected error parsing %s with python_ags4: %s", filepath, exc)
 
-    parsed = _parse_nonstandard_ags(filepath, encoding=encoding)
+    # Try fallback parser
+    try:
+        parsed = _parse_nonstandard_ags(filepath, encoding=encoding)
+        if parsed.tables:
+            return parsed.tables, parsed.headings
+    except Exception as exc:
+        # Only warn if fallback parser also fails
+        logger.warning(
+            "Both standard and fallback parsers failed for %s: %s", filepath, exc
+        )
+        raise
+
+    # If fallback parser returned empty tables, warn
+    logger.warning(
+        "Standard parser failed and fallback parser returned empty tables for %s",
+        filepath,
+    )
     return parsed.tables, parsed.headings
 
 
