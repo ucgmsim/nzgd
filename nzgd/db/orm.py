@@ -303,8 +303,7 @@ class DensityMeasurements(BaseModel):
     """Represents depth-specific density measurements extracted from GEOL table.
 
     This table stores density information that is associated with specific depth
-    intervals (from GEOL table). It can contain both descriptive terms and
-    density index ranges, both tied to specific soil layers.
+    intervals (from GEOL table). It contains descriptive terms tied to specific soil layers.
     """
 
     density_measurement_id = IntegerField(primary_key=True)
@@ -321,16 +320,7 @@ class DensityMeasurements(BaseModel):
     Null if only top depth is available."""
 
     density_keyword = TextField(null=True)
-    """str: The extracted density keyword with modifiers (e.g., 'very dense', 'loose', 'well compacted').
-    Null if only density index range is available."""
-
-    density_index_min = FloatField(null=True)
-    """float: The minimum value of the density index range (e.g., 35 for '35-65').
-    Null if only descriptive term is available."""
-
-    density_index_max = FloatField(null=True)
-    """float: The maximum value of the density index range (e.g., 65 for '35-65').
-    Null if only descriptive term is available."""
+    """str: The extracted density keyword with modifiers (e.g., 'very dense', 'loose', 'well compacted')."""
 
 
 class CPTReport(BaseModel):

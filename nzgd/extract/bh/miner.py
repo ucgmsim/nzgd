@@ -497,8 +497,6 @@ def _analyze_text_objects(
                 "top_depth_m",
                 "bottom_depth_m",
                 "density_description",
-                "density_index_min",
-                "density_index_max",
             ]
         ),
     )
@@ -569,8 +567,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             top_depth = row.get("top_depth_m")
             bottom_depth = row.get("bottom_depth_m")
             density_desc = row.get("density_description")
-            density_index_min = row.get("density_index_min")
-            density_index_max = row.get("density_index_max")
 
             # Convert density description to ID if present
             density_desc_id = None
@@ -602,12 +598,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                     if bottom_depth is not None and pd.notna(bottom_depth)
                     else None,
                     density_desc_id,
-                    float(density_index_min)
-                    if density_index_min is not None and pd.notna(density_index_min)
-                    else None,
-                    float(density_index_max)
-                    if density_index_max is not None and pd.notna(density_index_max)
-                    else None,
                 )
             )
 
@@ -615,8 +605,8 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         cursor.executemany(
             """
             INSERT INTO densitymeasurements 
-            (spt_id, top_depth_m, bottom_depth_m, density_description_id, density_index_min, density_index_max)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (spt_id, top_depth_m, bottom_depth_m, density_description_id)
+            VALUES (?, ?, ?, ?)
         """,
             density_data,
         )

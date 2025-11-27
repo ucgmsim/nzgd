@@ -46,6 +46,7 @@ Notes
 
 import json
 import multiprocessing
+import os
 import re
 import sqlite3
 import warnings
@@ -66,6 +67,7 @@ from nzgd.constants import (
     INDEX_FILE_PATH,
     MAX_ALLOWED_GWL,
     MIN_ALLOWED_GWL,
+    SPT_AGS_EXTRACTION_WARNINGS_DIR,
     SPT_AGS_LOG_FILE_PATH,
 )
 from nzgd.extract.bh.ags_parser import load_ags_tables
@@ -76,6 +78,77 @@ app = typer.Typer()
 
 # Configure warnings
 warnings.simplefilter("error", np.exceptions.RankWarning)
+
+
+class WarningLogger:
+    """Custom warning handler that writes warnings to a file."""
+
+    def __init__(self, output_file: Path):
+        """Initialize the warning logger.
+
+        Parameters
+        ----------
+        output_file : Path
+            Path to the CSV file where warnings will be written.
+        """
+        self.output_file = output_file
+        self.warnings_list: list[dict[str, Any]] = []
+        self.original_showwarning = warnings.showwarning
+
+    def __enter__(self):
+        """Set up the warning handler."""
+        warnings.showwarning = self._showwarning
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        """Restore the original warning handler and write warnings to file."""
+        warnings.showwarning = self.original_showwarning
+        self._write_warnings_to_file()
+
+    def _showwarning(
+        self,
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: Any = None,
+        line: str | None = None,
+    ) -> None:
+        """Custom warning handler that captures warnings and also prints them."""
+        # Call the original showwarning to print to terminal
+        self.original_showwarning(message, category, filename, lineno, file, line)
+
+        # Capture the warning for CSV output
+        warning_text = str(message) if isinstance(message, Warning) else message
+        self.warnings_list.append(
+            {
+                "warning_message": warning_text,
+                "category": category.__name__,
+                "filename": filename,
+                "line_number": lineno,
+            }
+        )
+
+    def _write_warnings_to_file(self):
+        """Write all collected warnings to a CSV file."""
+        if not self.warnings_list:
+            return
+
+        warnings_df = pd.DataFrame(self.warnings_list)
+        warnings_df.sort_values(
+            by=["filename", "line_number"], inplace=True, ignore_index=True
+        )
+
+        # Ensure the output directory exists
+        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to CSV
+        warnings_df.to_csv(self.output_file, index=False)
 
 
 @dataclass
@@ -534,7 +607,7 @@ def _filter_by_investigation(
     investigation_id: str | None,
     diagnostics: LocaDiagnostics | None = None,
 ) -> pd.DataFrame:
-    """Filter a table to rows matching the matched LOCA_ID from diagnostics.
+    """Filter a table to rows matching the matched location ID (LOCA_ID or HOLE_ID) from diagnostics.
 
     Parameters
     ----------
@@ -543,33 +616,34 @@ def _filter_by_investigation(
     investigation_id : str | None
         The InvestigationId string (kept for compatibility, but matching is done via diagnostics).
     diagnostics : LocaDiagnostics | None
-        Diagnostics object containing the matched LOCA_ID.
+        Diagnostics object containing the matched location ID.
 
     Returns
     -------
     pd.DataFrame
-        Filtered DataFrame containing only rows with the matched LOCA_ID.
+        Filtered DataFrame containing only rows with the matched location ID.
         Returns empty DataFrame if:
         - No match found in InvestigationId, OR
-        - Matched LOCA_ID doesn't exist in this table
-        Returns original DataFrame if only one LOCA_ID exists (no filtering needed).
+        - Matched location ID doesn't exist in this table
+        Returns original DataFrame if only one location ID exists (no filtering needed).
     """
-    if "LOCA_ID" not in df.columns:
+    location_id_col = _get_location_id_column_name(df)
+    if not location_id_col:
         return df
 
     unique_loca_ids = sorted(
         {
             str(value).strip()
-            for value in df["LOCA_ID"].dropna().unique()
+            for value in df[location_id_col].dropna().unique()
             if str(value).strip()
         }
     )
 
-    # If only one LOCA_ID exists, no filtering needed
+    # If only one location ID exists, no filtering needed
     if len(unique_loca_ids) <= 1:
         return df
 
-    # Use the matched LOCA_ID from diagnostics if available
+    # Use the matched location ID from diagnostics if available
     matched_loca_id = diagnostics.matched_loca_id if diagnostics else None
 
     # If no match was found in InvestigationId, return empty DataFrame
@@ -579,46 +653,46 @@ def _filter_by_investigation(
                 if not diagnostics.warned_no_InvestigationID:
                     diagnostics.warned_no_InvestigationID = True
                     warnings.warn(
-                        "Multiple LOCA_ID values present but no InvestigationId found; "
+                        f"Multiple {location_id_col} values present but no InvestigationId found; "
                         "returning empty DataFrame."
                     )
             else:
                 if not diagnostics.warned_no_match:
                     diagnostics.warned_no_match = True
                     warnings.warn(
-                        f"No LOCA_ID found in InvestigationId '{investigation_id}'; "
+                        f"No {location_id_col} found in InvestigationId '{investigation_id}'; "
                         "returning empty DataFrame."
                     )
         else:
             # Fallback: warn if no diagnostics available
             if not investigation_id:
                 warnings.warn(
-                    "Multiple LOCA_ID values present but no InvestigationId found; "
+                    f"Multiple {location_id_col} values present but no InvestigationId found; "
                     "returning empty DataFrame."
                 )
             else:
                 warnings.warn(
-                    f"No LOCA_ID found in InvestigationId '{investigation_id}'; "
+                    f"No {location_id_col} found in InvestigationId '{investigation_id}'; "
                     "returning empty DataFrame."
                 )
         # Return empty DataFrame with same columns
         return df.iloc[0:0].copy()
 
-    # Try to filter by matched LOCA_ID
+    # Try to filter by matched location ID
     mask = (
-        df["LOCA_ID"].astype(str).str.strip().str.upper()
+        df[location_id_col].astype(str).str.strip().str.upper()
         == matched_loca_id.strip().upper()
     )
 
     if mask.any():
-        # Matched LOCA_ID exists in this table, return filtered rows
+        # Matched location ID exists in this table, return filtered rows
         return df[mask]
     else:
-        # Matched LOCA_ID doesn't exist in this table, return empty DataFrame
+        # Matched location ID doesn't exist in this table, return empty DataFrame
         if diagnostics and not diagnostics.warned_no_match:
             diagnostics.warned_no_match = True
             warnings.warn(
-                f"Matched LOCA_ID '{matched_loca_id}' from InvestigationId "
+                f"Matched {location_id_col} '{matched_loca_id}' from InvestigationId "
                 f"'{investigation_id}' not found in this table; returning empty DataFrame."
             )
         # Return empty DataFrame with same columns
@@ -707,53 +781,6 @@ def _extract_density_from_description(description: str) -> list[str]:
     return found_phrases
 
 
-def _extract_density_index_ranges(
-    description: str,
-) -> list[dict[str, str | float | None]]:
-    """Extract density index ranges from a soil description string.
-
-    Looks for patterns like "density index 35 -65" or "density index 65-85"
-    and extracts the numeric ranges.
-
-    Parameters
-    ----------
-    description : str
-        Soil description text (e.g., from GEOL_DESC or ADDL).
-
-    Returns
-    -------
-    list[dict]
-        List of dictionaries with 'range_min' and 'range_max' keys.
-        Example: [{'range_min': 35.0, 'range_max': 65.0}]
-    """
-    if pd.isna(description) or not description:
-        return []
-
-    description_str = str(description)
-
-    # Pattern to match "density index" followed by a number range
-    # Matches: "density index 35 -65", "density index 65-85", "density index 15 -35", etc.
-    pattern = r"density\s+index\s+(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)"
-
-    ranges = []
-    matches = re.finditer(pattern, description_str, re.IGNORECASE)
-
-    for match in matches:
-        try:
-            range_min = float(match.group(1))
-            range_max = float(match.group(2))
-            ranges.append(
-                {
-                    "range_min": range_min,
-                    "range_max": range_max,
-                }
-            )
-        except (ValueError, TypeError):
-            continue
-
-    return ranges
-
-
 def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
     """Return the first value in `column` convertible to float."""
     if df.empty or column not in df.columns:
@@ -776,10 +803,31 @@ def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
     return None
 
 
+def _get_location_id_column_name(df: pd.DataFrame) -> str | None:
+    """Get the location ID column name (LOCA_ID or HOLE_ID) from a DataFrame.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to check for location ID columns.
+
+    Returns
+    -------
+    str | None
+        "LOCA_ID" if present, "HOLE_ID" if LOCA_ID is not present but HOLE_ID is,
+        or None if neither is present.
+    """
+    if "LOCA_ID" in df.columns:
+        return "LOCA_ID"
+    elif "HOLE_ID" in df.columns:
+        return "HOLE_ID"
+    return None
+
+
 def _collect_loca_ids_and_table_counts(
     tables: dict[str, pd.DataFrame],
 ) -> list[tuple[str, int]]:
-    """Collect all LOCA_IDs and count how many tables each appears in.
+    """Collect all location IDs (LOCA_ID or HOLE_ID) and count how many tables each appears in.
 
     Only counts occurrences in ISPT and GEOL tables, ignoring all other tables.
 
@@ -791,38 +839,35 @@ def _collect_loca_ids_and_table_counts(
     Returns
     -------
     list[tuple[str, int]]
-        List of (LOCA_ID, table_count) tuples, sorted by table_count descending,
-        then by LOCA_ID alphabetically. LOCA_IDs appearing in more tables come first.
+        List of (location_id, table_count) tuples, sorted by table_count descending,
+        then by location_id alphabetically. Location IDs appearing in more tables come first.
         Only counts occurrences in ISPT and GEOL tables.
     """
     loca_id_to_tables: dict[str, set[str]] = {}
 
-    # Find only ISPT and GEOL tables that have a LOCA_ID column
-    tables_with_loca_id = {
-        table_name: table
-        for table_name, table in tables.items()
-        if (
-            isinstance(table, pd.DataFrame)
-            and "LOCA_ID" in table.columns
-            and table_name in ("ISPT", "GEOL")
-        )
-    }
+    # Find only ISPT and GEOL tables that have a location ID column (LOCA_ID or HOLE_ID)
+    tables_with_loca_id = {}
+    for table_name, table in tables.items():
+        if isinstance(table, pd.DataFrame) and table_name in ("ISPT", "GEOL"):
+            location_id_col = _get_location_id_column_name(table)
+            if location_id_col:
+                tables_with_loca_id[table_name] = (table, location_id_col)
 
     # Process each table
-    for table_name, table in tables_with_loca_id.items():
-        series = table["LOCA_ID"]
+    for table_name, (table, location_id_col) in tables_with_loca_id.items():
+        series = table[location_id_col]
         # Skip the first 2 rows if HEADING column exists (UNIT and TYPE rows)
         if "HEADING" in table.columns and len(series) > 2:
             series = series.iloc[2:]
         for value in series.dropna():
             value_str = str(value).strip()
             if value_str:
-                # Track which table this LOCA_ID appears in
+                # Track which table this location ID appears in
                 if value_str not in loca_id_to_tables:
                     loca_id_to_tables[value_str] = set()
                 loca_id_to_tables[value_str].add(table_name)
 
-    # Convert to list of tuples and sort by table count (descending), then by LOCA_ID
+    # Convert to list of tuples and sort by table count (descending), then by location ID
     result = [
         (loca_id, len(tables_set)) for loca_id, tables_set in loca_id_to_tables.items()
     ]
@@ -920,23 +965,43 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         report.name,
     )
 
+    # Determine which location ID column name to use (LOCA_ID or HOLE_ID) for each table
+    ispt_location_id_col = None
+    geol_location_id_col = None
+
+    if "ISPT" in tables and isinstance(tables["ISPT"], pd.DataFrame):
+        ispt_location_id_col = _get_location_id_column_name(tables["ISPT"])
+    if "GEOL" in tables and isinstance(tables["GEOL"], pd.DataFrame):
+        geol_location_id_col = _get_location_id_column_name(tables["GEOL"])
+
+    # Build column lists, only including location ID column if it exists
     ispt_columns = [
-        "LOCA_ID",
         "ISPT_TOP",
         "ISPT_MAIN",
         "ISPT_NVAL",
         "ISPT_WAT",
         "ISPT_ERAT",
     ]
-    geology_columns = ["LOCA_ID", "GEOL_TOP", "GEOL_BASE", "GEOL_DESC"]
+    if ispt_location_id_col:
+        ispt_columns.insert(0, ispt_location_id_col)
+
+    geology_columns = ["GEOL_TOP", "GEOL_BASE", "GEOL_DESC"]
+    # Also include GEOL_NAME if it exists, as it may contain soil type information
+    if "GEOL" in tables and isinstance(tables["GEOL"], pd.DataFrame):
+        if "GEOL_NAME" in tables["GEOL"].columns:
+            geology_columns.append("GEOL_NAME")
+    if geol_location_id_col:
+        geology_columns.insert(0, geol_location_id_col)
+
     desired_ispt_columns = [
-        "LOCA_ID",
         "Depth",
         "ISPT_MAIN",
         "ISPT_NVAL",
         "ISPT_WAT",
         "ISPT_ERAT",
     ]
+    if ispt_location_id_col:
+        desired_ispt_columns.insert(0, ispt_location_id_col)
 
     # Initialize SPT table with empty DataFrame
     spt_table = pd.DataFrame(columns=desired_ispt_columns)
@@ -965,8 +1030,6 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             "top_depth_m",
             "bottom_depth_m",
             "density_description",
-            "density_index_min",
-            "density_index_max",
         ]
     )
 
@@ -981,14 +1044,50 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             rename_dict["GEOL_BASE"] = "bottom_depth"
         geology_table = geol_df.rename(columns=rename_dict)
 
+        # Extract soil types from GEOL_DESC
         geology_table["soil_types"] = geology_table["soil_types"].apply(
             extract_soil_report,
         )
 
+        # If GEOL_NAME exists, also extract soil types from it and combine with GEOL_DESC results
+        if "GEOL_NAME" in geology_table.columns:
+
+            def extract_from_both(
+                desc_soil_types: set[str], geol_name: Any
+            ) -> set[str]:
+                """Extract soil types from both GEOL_DESC and GEOL_NAME."""
+                # Start with soil types from GEOL_DESC
+                combined_soil_types = (
+                    desc_soil_types.copy() if desc_soil_types else set()
+                )
+
+                # Also extract from GEOL_NAME if it exists and is not empty
+                if pd.notna(geol_name) and str(geol_name).strip():
+                    name_soil_types = extract_soil_report(str(geol_name))
+                    combined_soil_types.update(name_soil_types)
+
+                return combined_soil_types
+
+            # Combine soil types from both columns
+            geology_table["soil_types"] = geology_table.apply(
+                lambda row: extract_from_both(
+                    row["soil_types"], row.get("GEOL_NAME", "")
+                ),
+                axis=1,
+            )
+
         # Extract density measurements from GEOL descriptions
+        # Use GEOL_DESC if available, otherwise try GEOL_NAME
         density_rows = []
         for idx, row in geol_df.iterrows():
             description = row.get("GEOL_DESC", "")
+            # If GEOL_DESC is empty, try GEOL_NAME as fallback
+            if (
+                not description
+                or pd.isna(description)
+                or str(description).strip() == ""
+            ) and "GEOL_NAME" in row:
+                description = row.get("GEOL_NAME", "")
             top_depth = row.get("GEOL_TOP", None)
 
             # Try to get bottom depth if GEOL_BASE exists
@@ -998,9 +1097,6 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
 
             # Extract density keywords (with modifiers like "very", "high", etc.)
             density_keywords = _extract_density_from_description(description)
-
-            # Extract density index ranges
-            density_index_ranges = _extract_density_index_ranges(description)
 
             # Try to convert depths to float
             top_depth_float = None
@@ -1027,20 +1123,6 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
                             "top_depth_m": top_depth_float,
                             "bottom_depth_m": bottom_depth_float,
                             "density_description": density_keyword,  # Column name kept for compatibility
-                            "density_index_min": None,
-                            "density_index_max": None,
-                        }
-                    )
-
-                # Create rows for density index ranges
-                for index_range in density_index_ranges:
-                    density_rows.append(
-                        {
-                            "top_depth_m": top_depth_float,
-                            "bottom_depth_m": bottom_depth_float,
-                            "density_description": None,
-                            "density_index_min": index_range["range_min"],
-                            "density_index_max": index_range["range_max"],
                         }
                     )
 
@@ -1084,7 +1166,13 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
 
     # Check if any meaningful data was extracted
     has_spt_data = not spt_table.empty and not spt_table["ISPT_MAIN"].eq("").all()
-    has_soil_data = not geology_table.empty
+    # Check if geology_table has any rows with non-empty soil_types
+    has_soil_data = (
+        not geology_table.empty
+        and geology_table["soil_types"]
+        .apply(lambda x: len(x) > 0 if isinstance(x, set) else False)
+        .any()
+    )
     has_efficiency = efficiency is not None
 
     if not (has_spt_data or has_soil_data or has_efficiency):
@@ -1128,12 +1216,67 @@ def process_borehole_no_exceptions(
         logging metadata, or None if an exception occurs.
 
     """
+
     borehole_id, report = borehole_file_tuple
-    try:
-        return process_borehole(borehole_id, report)
-    except Exception as e:
-        warnings.warn(f"Failed to process {report}: {e}")
-        return None
+
+    # Create a unique warning file for this worker process
+    # Use process ID and borehole ID to ensure uniqueness
+    process_id = os.getpid()
+    warning_file = (
+        SPT_AGS_EXTRACTION_WARNINGS_DIR / f"warnings_{process_id}_{borehole_id}.csv"
+    )
+
+    # Collect warnings from this worker process and write to file
+    with WarningLogger(warning_file):
+        try:
+            return process_borehole(borehole_id, report)
+        except Exception as e:
+            warnings.warn(f"Failed to process {report}: {e}")
+            return None
+
+
+def _consolidate_warning_files():
+    """Consolidate all warning CSV files from worker processes into a single file."""
+    if not SPT_AGS_EXTRACTION_WARNINGS_DIR.exists():
+        return
+
+    # Find all warning CSV files
+    warning_files = list(SPT_AGS_EXTRACTION_WARNINGS_DIR.glob("warnings_*.csv"))
+
+    if not warning_files:
+        return
+
+    # Read and combine all warning files
+    all_warnings: list[dict[str, Any]] = []
+    for warning_file in warning_files:
+        try:
+            warnings_df = pd.read_csv(warning_file)
+            all_warnings.extend(warnings_df.to_dict("records"))
+        except Exception:
+            # Skip files that can't be read
+            continue
+
+    if not all_warnings:
+        return
+
+    # Create consolidated DataFrame and write to main file
+    consolidated_df = pd.DataFrame(all_warnings)
+    consolidated_df.sort_values(
+        by=["filename", "line_number"], inplace=True, ignore_index=True
+    )
+
+    consolidated_file = (
+        SPT_AGS_EXTRACTION_WARNINGS_DIR / "all_spt_ags_extraction_warnings.csv"
+    )
+    consolidated_df.to_csv(consolidated_file, index=False)
+
+    # Clean up individual warning files
+    for warning_file in warning_files:
+        try:
+            warning_file.unlink()
+        except Exception:
+            # Ignore errors when deleting files
+            pass
 
 
 def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
@@ -1195,11 +1338,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         for _, row in report.density_measurements.iterrows():
             top_depth = row.get("top_depth_m")
             bottom_depth = row.get("bottom_depth_m")
-            density_keyword = row.get(
-                "density_description"
-            )  # Still using same column name in DataFrame
-            density_index_min = row.get("density_index_min")
-            density_index_max = row.get("density_index_max")
+            density_keyword = row.get("density_description")
 
             # Store density keyword directly as text (no normalization)
             density_keyword_str = None
@@ -1218,12 +1357,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                     if bottom_depth is not None and pd.notna(bottom_depth)
                     else None,
                     density_keyword_str,
-                    float(density_index_min)
-                    if density_index_min is not None and pd.notna(density_index_min)
-                    else None,
-                    float(density_index_max)
-                    if density_index_max is not None and pd.notna(density_index_max)
-                    else None,
                 )
             )
 
@@ -1231,8 +1364,8 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         cursor.executemany(
             """
             INSERT INTO densitymeasurements 
-            (spt_id, top_depth_m, bottom_depth_m, density_keyword, density_index_min, density_index_max)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (spt_id, top_depth_m, bottom_depth_m, density_keyword)
+            VALUES (?, ?, ?, ?)
         """,
             density_data,
         )
@@ -1364,6 +1497,8 @@ def mine_borehole_log(
         Path to the output SQLite database.
 
     """
+    # Ensure warnings directory exists
+    SPT_AGS_EXTRACTION_WARNINGS_DIR.mkdir(parents=True, exist_ok=True)
 
     with multiprocessing.Pool() as pool:
         results = [
@@ -1385,6 +1520,9 @@ def mine_borehole_log(
     log_df.sort_values(by=["nzgd_id", "AGS_file_name"], inplace=True, ignore_index=True)
     SPT_AGS_LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     log_df.to_csv(SPT_AGS_LOG_FILE_PATH, index=False)
+
+    # Consolidate all warning files into a single file
+    _consolidate_warning_files()
 
 
 if __name__ == "__main__":

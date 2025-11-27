@@ -90,5 +90,4 @@ class SPTReport:
 
     density_measurements: pd.DataFrame
     """Depth-specific density measurements from GEOL table. A dataframe with columns 
-    'top_depth_m', 'bottom_depth_m', 'density_description', 'density_index_min', 
-    and 'density_index_max'. All rows have depth associations."""
+    'top_depth_m', 'bottom_depth_m', and 'density_description'. All rows have depth associations."""

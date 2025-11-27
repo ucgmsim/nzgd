@@ -48,6 +48,7 @@ TEMP_SPT_AGS_DB_PATH = Path(CONFIG["temp_spt_ags_db"])
 TEMP_SPT_PDF_DB_PATH = Path(CONFIG["temp_spt_pdf_db"])
 
 SPT_AGS_LOG_FILE_PATH = Path(CONFIG["spt_ags_log_file_path"])
+SPT_AGS_EXTRACTION_WARNINGS_DIR = Path(CONFIG["spt_ags_extraction_warnings_dir"])
 
 # Paths to groundwater level model GeoTIFF files
 WESTERHOFF_2018_MODEL_PATH = Path(CONFIG["westerhoff_2018_model_path"])

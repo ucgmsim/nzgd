@@ -113,12 +113,29 @@ def _parse_nonstandard_ags(
 
             first_cell = row[0].strip()
 
+            # Handle both **GROUP and GROUP formats
             if first_cell.startswith("**"):
                 flush_group()
                 current_group = first_cell.lstrip("*")
                 current_headings = []
                 current_rows = []
                 collecting_headings = True
+                continue
+
+            # Handle GROUP format (without asterisks) - common in CSV files
+            if first_cell == "GROUP" and len(row) > 1:
+                flush_group()
+                current_group = row[1].strip() if len(row) > 1 else None
+                current_headings = []
+                current_rows = []
+                collecting_headings = True
+                continue
+
+            # Handle HEADING format (without asterisks) - common in CSV files
+            if first_cell == "HEADING" and collecting_headings:
+                # Skip the first cell (HEADING) and collect the rest as column names
+                cleaned = [cell.strip() for cell in row[1:] if cell and cell.strip()]
+                current_headings.extend(cleaned)
                 continue
 
             if first_cell.startswith("*") and collecting_headings:
@@ -155,6 +172,10 @@ def _extract_row_heading_and_values(row: List[str]) -> Tuple[str, List[str]]:
             tag = tag[:-1]
         tag = {"UNIT": "UNIT", "TYPE": "TYPE", "DATA": "DATA"}.get(tag, tag)
         return tag, row[1:]
+
+    # Handle standard AGS format where first cell is HEADING/UNIT/TYPE/DATA
+    if first_cell in ("HEADING", "UNIT", "TYPE", "DATA"):
+        return first_cell, row[1:]
 
     return "DATA", row
 

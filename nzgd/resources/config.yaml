@@ -10,6 +10,7 @@ temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt
 temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p4p2_20251127.db"
 
 spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p4p2_20251127.csv"
+spt_ags_extraction_warnings_dir: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_extraction_warnings"
 
 all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values_v0p4p2_20251127.csv"
 cpt_supplemental_values_filename: "cpt_supplemental_values_v0p4p2_20251127.csv"
