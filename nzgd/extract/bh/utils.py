@@ -24,7 +24,7 @@ def extract_soil_report(description: str) -> set[str]:
     """
     soil_types = set(SOIL_TYPE_TO_ID.keys())
 
-    return soil_types & {word.strip(",.;") for word in description.split()}
+    return soil_types & {word.strip(",.;:") for word in description.split()}
 
 
 @dataclass

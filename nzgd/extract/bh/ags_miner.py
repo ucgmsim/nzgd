@@ -80,20 +80,34 @@ app = typer.Typer()
 warnings.simplefilter("error", np.exceptions.RankWarning)
 
 
-class WarningLogger:
-    """Custom warning handler that writes warnings to a file."""
+class ExtractionStatusLogger:
+    """Tracks extraction status and writes to a file."""
 
-    def __init__(self, output_file: Path):
-        """Initialize the warning logger.
+    def __init__(self, output_file: Path, nzgd_id: int, file_name: str):
+        """Initialize the extraction status logger.
 
         Parameters
         ----------
         output_file : Path
-            Path to the CSV file where warnings will be written.
+            Path to the CSV file where extraction status will be written.
+        nzgd_id : int
+            The NZGD ID for this file.
+        file_name : str
+            The name of the file being processed.
         """
         self.output_file = output_file
-        self.warnings_list: list[dict[str, Any]] = []
+        self.nzgd_id = nzgd_id
+        self.file_name = file_name
         self.original_showwarning = warnings.showwarning
+        # Initialize extraction status - default to 1 (success) for all
+        self.extraction_status = {
+            "nzgd_id": nzgd_id,
+            "file_name": file_name,
+            "extracted_spt_measurements": 1,
+            "extracted_soil_measurements": 1,
+            "extracted_density_measurements": 1,
+            "extracted_efficiency": 1,
+        }
 
     def __enter__(self):
         """Set up the warning handler."""
@@ -106,9 +120,9 @@ class WarningLogger:
         exc_val: BaseException | None,
         exc_tb: Any,
     ) -> None:
-        """Restore the original warning handler and write warnings to file."""
+        """Restore the original warning handler and write extraction status to file."""
         warnings.showwarning = self.original_showwarning
-        self._write_warnings_to_file()
+        self._write_extraction_status_to_file()
 
     def _showwarning(
         self,
@@ -119,36 +133,75 @@ class WarningLogger:
         file: Any = None,
         line: str | None = None,
     ) -> None:
-        """Custom warning handler that captures warnings and also prints them."""
+        """Custom warning handler that captures warnings and updates extraction status."""
         # Call the original showwarning to print to terminal
         self.original_showwarning(message, category, filename, lineno, file, line)
 
-        # Capture the warning for CSV output
+        # Update extraction status based on warning messages
         warning_text = str(message) if isinstance(message, Warning) else message
-        self.warnings_list.append(
-            {
-                "warning_message": warning_text,
-                "category": category.__name__,
-                "filename": filename,
-                "line_number": lineno,
-            }
-        )
 
-    def _write_warnings_to_file(self):
-        """Write all collected warnings to a CSV file."""
-        if not self.warnings_list:
-            return
+        # Check for specific warning patterns that indicate extraction failures
+        if "No SPT" in warning_text or "no SPT measurements" in warning_text:
+            self.extraction_status["extracted_spt_measurements"] = 0
+        if (
+            "no soil measurements" in warning_text
+            or "No meaningful data" in warning_text
+        ):
+            self.extraction_status["extracted_soil_measurements"] = 0
+        if "no density" in warning_text.lower():
+            self.extraction_status["extracted_density_measurements"] = 0
+        if (
+            "no efficiency" in warning_text
+            or "efficiency" in warning_text.lower()
+            and "not found" in warning_text.lower()
+        ):
+            self.extraction_status["extracted_efficiency"] = 0
 
-        warnings_df = pd.DataFrame(self.warnings_list)
-        warnings_df.sort_values(
-            by=["filename", "line_number"], inplace=True, ignore_index=True
-        )
+    def update_extraction_status(
+        self,
+        extracted_spt: bool | None = None,
+        extracted_soil: bool | None = None,
+        extracted_density: bool | None = None,
+        extracted_efficiency: bool | None = None,
+    ):
+        """Update extraction status based on actual extraction results.
 
+        Parameters
+        ----------
+        extracted_spt : bool | None
+            Whether SPT measurements were extracted.
+        extracted_soil : bool | None
+            Whether soil measurements were extracted.
+        extracted_density : bool | None
+            Whether density measurements were extracted.
+        extracted_efficiency : bool | None
+            Whether efficiency was extracted.
+        """
+        if extracted_spt is not None:
+            self.extraction_status["extracted_spt_measurements"] = (
+                1 if extracted_spt else 0
+            )
+        if extracted_soil is not None:
+            self.extraction_status["extracted_soil_measurements"] = (
+                1 if extracted_soil else 0
+            )
+        if extracted_density is not None:
+            self.extraction_status["extracted_density_measurements"] = (
+                1 if extracted_density else 0
+            )
+        if extracted_efficiency is not None:
+            self.extraction_status["extracted_efficiency"] = (
+                1 if extracted_efficiency else 0
+            )
+
+    def _write_extraction_status_to_file(self):
+        """Write extraction status to a CSV file."""
         # Ensure the output directory exists
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Write to CSV
-        warnings_df.to_csv(self.output_file, index=False)
+        status_df = pd.DataFrame([self.extraction_status])
+        status_df.to_csv(self.output_file, index=False)
 
 
 @dataclass
@@ -1165,7 +1218,17 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             warnings.warn(f"Could not extract efficiency from {report}: {e}")
 
     # Check if any meaningful data was extracted
-    has_spt_data = not spt_table.empty and not spt_table["ISPT_MAIN"].eq("").all()
+    # Check SPT data: either ISPT_MAIN or ISPT_NVAL should have values
+    has_spt_data = False
+    if not spt_table.empty:
+        has_main = (
+            "ISPT_MAIN" in spt_table.columns and not spt_table["ISPT_MAIN"].eq("").all()
+        )
+        has_nval = (
+            "ISPT_NVAL" in spt_table.columns and not spt_table["ISPT_NVAL"].eq("").all()
+        )
+        has_spt_data = has_main or has_nval
+
     # Check if geology_table has any rows with non-empty soil_types
     has_soil_data = (
         not geology_table.empty
@@ -1173,11 +1236,12 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         .apply(lambda x: len(x) > 0 if isinstance(x, set) else False)
         .any()
     )
+    has_density_data = not density_measurements.empty
     has_efficiency = efficiency is not None
 
-    if not (has_spt_data or has_soil_data or has_efficiency):
+    if not (has_spt_data or has_soil_data or has_density_data or has_efficiency):
         raise ValueError(
-            f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, or efficiency found"
+            f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, density measurements, or efficiency found"
         )
 
     return BoreholeProcessingResult(
@@ -1219,61 +1283,104 @@ def process_borehole_no_exceptions(
 
     borehole_id, report = borehole_file_tuple
 
-    # Create a unique warning file for this worker process
+    # Create a unique extraction status file for this worker process
     # Use process ID and borehole ID to ensure uniqueness
     process_id = os.getpid()
-    warning_file = (
-        SPT_AGS_EXTRACTION_WARNINGS_DIR / f"warnings_{process_id}_{borehole_id}.csv"
+    status_file = (
+        SPT_AGS_EXTRACTION_WARNINGS_DIR
+        / f"extraction_status_{process_id}_{borehole_id}.csv"
     )
 
-    # Collect warnings from this worker process and write to file
-    with WarningLogger(warning_file):
+    # Track extraction status for this file
+    status_logger = ExtractionStatusLogger(status_file, borehole_id, report.name)
+    with status_logger:
         try:
-            return process_borehole(borehole_id, report)
+            result = process_borehole(borehole_id, report)
+
+            # Update extraction status based on actual results
+            if result:
+                report_obj = result.report
+                # Check SPT data: either ISPT_MAIN or ISPT_NVAL should have values
+                extracted_spt = False
+                if not report_obj.spt_measurements.empty:
+                    has_main = (
+                        "ISPT_MAIN" in report_obj.spt_measurements.columns
+                        and not report_obj.spt_measurements["ISPT_MAIN"].eq("").all()
+                    )
+                    has_nval = (
+                        "ISPT_NVAL" in report_obj.spt_measurements.columns
+                        and not report_obj.spt_measurements["ISPT_NVAL"].eq("").all()
+                    )
+                    extracted_spt = has_main or has_nval
+                extracted_soil = (
+                    not report_obj.soil_measurements.empty
+                    and report_obj.soil_measurements["soil_types"]
+                    .apply(lambda x: len(x) > 0 if isinstance(x, set) else False)
+                    .any()
+                )
+                extracted_density = not report_obj.density_measurements.empty
+                extracted_efficiency = report_obj.efficiency is not None
+
+                # Update status before context exits
+                status_logger.update_extraction_status(
+                    extracted_spt=extracted_spt,
+                    extracted_soil=extracted_soil,
+                    extracted_density=extracted_density,
+                    extracted_efficiency=extracted_efficiency,
+                )
+
+            return result
         except Exception as e:
             warnings.warn(f"Failed to process {report}: {e}")
+            # Update status to indicate failure - all extractions failed
+            status_logger.update_extraction_status(
+                extracted_spt=False,
+                extracted_soil=False,
+                extracted_density=False,
+                extracted_efficiency=False,
+            )
             return None
 
 
 def _consolidate_warning_files():
-    """Consolidate all warning CSV files from worker processes into a single file."""
+    """Consolidate all extraction status CSV files from worker processes into a single file."""
     if not SPT_AGS_EXTRACTION_WARNINGS_DIR.exists():
         return
 
-    # Find all warning CSV files
-    warning_files = list(SPT_AGS_EXTRACTION_WARNINGS_DIR.glob("warnings_*.csv"))
+    # Find all extraction status CSV files
+    status_files = list(SPT_AGS_EXTRACTION_WARNINGS_DIR.glob("extraction_status_*.csv"))
 
-    if not warning_files:
+    if not status_files:
         return
 
-    # Read and combine all warning files
-    all_warnings: list[dict[str, Any]] = []
-    for warning_file in warning_files:
+    # Read and combine all status files
+    all_statuses: list[dict[str, Any]] = []
+    for status_file in status_files:
         try:
-            warnings_df = pd.read_csv(warning_file)
-            all_warnings.extend(warnings_df.to_dict("records"))
+            status_df = pd.read_csv(status_file)
+            all_statuses.extend(status_df.to_dict("records"))
         except Exception:
             # Skip files that can't be read
             continue
 
-    if not all_warnings:
+    if not all_statuses:
         return
 
     # Create consolidated DataFrame and write to main file
-    consolidated_df = pd.DataFrame(all_warnings)
+    consolidated_df = pd.DataFrame(all_statuses)
     consolidated_df.sort_values(
-        by=["filename", "line_number"], inplace=True, ignore_index=True
+        by=["nzgd_id", "file_name"], inplace=True, ignore_index=True
     )
 
     consolidated_file = (
-        SPT_AGS_EXTRACTION_WARNINGS_DIR / "all_spt_ags_extraction_warnings.csv"
+        SPT_AGS_EXTRACTION_WARNINGS_DIR / "all_spt_ags_extraction_status.csv"
     )
     consolidated_df.to_csv(consolidated_file, index=False)
 
-    # Clean up individual warning files
-    for warning_file in warning_files:
+    # Clean up individual status files
+    for status_file in status_files:
         try:
-            warning_file.unlink()
+            status_file.unlink()
         except Exception:
             # Ignore errors when deleting files
             pass
