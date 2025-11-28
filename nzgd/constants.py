@@ -795,3 +795,19 @@ SPT_DEPTH_OFFSET_m = 0.3048
 PHRASE_BOUNDARY_CHARACTERS = [",", ";", r"\|", r"(?<!\d)\.(?!\d)"]
 
 LIKELY_PRECEDING_NUMERICAL_VALUES = [":", "="]
+
+###
+# Paths for NZGD API catalogs
+NZGD_API_FILE_CATALOG_PATH_CURRENT = RESOURCE_PATH / Path(
+    CONFIG["nzgd_api_file_catalog_path_current"]
+)
+NZGD_API_FILE_CATALOG_PATH_NEW = RESOURCE_PATH / Path(
+    CONFIG["nzgd_api_file_catalog_path_new"]
+)
+
+NZGD_API_INVESTIGATION_CATALOG_PATH_CURRENT = RESOURCE_PATH / Path(
+    CONFIG["nzgd_api_investigation_catalog_path_current"]
+)
+NZGD_API_INVESTIGATION_CATALOG_PATH_NEW = RESOURCE_PATH / Path(
+    CONFIG["nzgd_api_investigation_catalog_path_new"]
+)
