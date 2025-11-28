@@ -3,7 +3,7 @@
 import pandas as pd
 
 from nzgd import constants
-from nzgd.extract.bh import ags_miner  # , miner
+from nzgd.extract.bh import ags_miner, miner
 
 nzgd_index_df = pd.read_csv(
     constants.INDEX_FILE_PATH, low_memory=False
@@ -16,8 +16,7 @@ nzgd_index_df = nzgd_index_df[
 pdf_files = []
 ags_files = []
 
-# for nzgd_id in nzgd_index_df["nzgd_id"]:
-for nzgd_id in [142157]:
+for nzgd_id in nzgd_index_df["nzgd_id"]:
     available_files = list((constants.NZGD_SOURCE_DATA_DIR / str(nzgd_id)).glob("*"))
 
     for f in available_files:
@@ -27,4 +26,4 @@ for nzgd_id in [142157]:
             ags_files.append((nzgd_id, f))
 
 ags_miner.mine_borehole_log(ags_files, constants.TEMP_SPT_AGS_DB_PATH)
-# miner.mine_borehole_log(pdf_files, constants.TEMP_SPT_PDF_DB_PATH)
+miner.mine_borehole_log(pdf_files, constants.TEMP_SPT_PDF_DB_PATH)

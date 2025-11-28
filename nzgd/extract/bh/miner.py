@@ -553,12 +553,6 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         value: soil_type_id for soil_type_id, value in cursor.fetchall()
     }
 
-    # Build density description lookup map (get existing density descriptions)
-    cursor.execute("SELECT id, value FROM densitydescriptions")
-    density_desc_id_map = {
-        value.lower(): density_desc_id for density_desc_id, value in cursor.fetchall()
-    }
-
     # Insert DensityMeasurements (depth-specific from GEOL)
     # Note: PDF extraction doesn't extract density data, so this will be empty
     density_data = []
@@ -566,25 +560,12 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         for _, row in report.density_measurements.iterrows():
             top_depth = row.get("top_depth_m")
             bottom_depth = row.get("bottom_depth_m")
-            density_desc = row.get("density_description")
+            density_keyword = row.get("density_description")
 
-            # Convert density description to ID if present
-            density_desc_id = None
-            if density_desc and pd.notna(density_desc):
-                density_desc_lower = str(density_desc).lower().strip()
-                if density_desc_lower in density_desc_id_map:
-                    density_desc_id = density_desc_id_map[density_desc_lower]
-                else:
-                    # Insert new density description if not found (unlikely for PDF data)
-                    cursor.execute(
-                        """
-                        INSERT INTO densitydescriptions (value)
-                        VALUES (?)
-                    """,
-                        (density_desc,),
-                    )
-                    density_desc_id = cursor.lastrowid
-                    density_desc_id_map[density_desc_lower] = density_desc_id
+            # Store density keyword directly as text (no normalization)
+            density_keyword_str = None
+            if density_keyword and pd.notna(density_keyword):
+                density_keyword_str = str(density_keyword).strip()
 
             # Ensure top_depth is not None (required field)
             if top_depth is None or pd.isna(top_depth):
@@ -597,7 +578,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                     float(bottom_depth)
                     if bottom_depth is not None and pd.notna(bottom_depth)
                     else None,
-                    density_desc_id,
+                    density_keyword_str,
                 )
             )
 
@@ -605,7 +586,7 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
         cursor.executemany(
             """
             INSERT INTO densitymeasurements 
-            (spt_id, top_depth_m, bottom_depth_m, density_description_id)
+            (spt_id, top_depth_m, bottom_depth_m, density_keyword)
             VALUES (?, ?, ?, ?)
         """,
             density_data,
@@ -633,7 +614,9 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
                 top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
                 bottom_depth = None
                 if "bottom_depth" in row:
-                    bottom_depth = row["bottom_depth"] if pd.notna(row["bottom_depth"]) else None
+                    bottom_depth = (
+                        row["bottom_depth"] if pd.notna(row["bottom_depth"]) else None
+                    )
                 cursor.execute(
                     """
                                    INSERT INTO soilmeasurements (spt_id, top_depth_m, bottom_depth_m)

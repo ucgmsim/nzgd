@@ -264,6 +264,67 @@ def copy_soil_measurements_and_types(
     )
 
 
+def copy_density_measurements(
+    temp_conn: sqlite3.Connection,
+    main_conn: sqlite3.Connection,
+    spt_id_mapping: dict[int, int],
+    source_name: str,
+):
+    """Copy density measurements from temporary database to main database.
+
+    Parameters
+    ----------
+    temp_conn : sqlite3.Connection
+        Connection to the temporary database.
+    main_conn : sqlite3.Connection
+        Connection to the main database.
+    spt_id_mapping : dict[int, int]
+        Mapping from original spt_id to new spt_id.
+    source_name : str
+        Name of the source for logging.
+    """
+    temp_cursor = temp_conn.cursor()
+    main_cursor = main_conn.cursor()
+
+    # Get the next available density_measurement_id in main database
+    main_cursor.execute("SELECT MAX(density_measurement_id) FROM densitymeasurements")
+    result = main_cursor.fetchone()
+    next_measurement_id = (result[0] + 1) if result[0] is not None else 1
+
+    # Get all density measurements from temporary database
+    temp_cursor.execute(
+        "SELECT spt_id, top_depth_m, bottom_depth_m, density_keyword FROM densitymeasurements"
+    )
+    temp_density_measurements = temp_cursor.fetchall()
+
+    copied_count = 0
+    for temp_measurement in temp_density_measurements:
+        original_spt_id, top_depth_m, bottom_depth_m, density_keyword = temp_measurement
+
+        if original_spt_id in spt_id_mapping:
+            new_spt_id = spt_id_mapping[original_spt_id]
+
+            # Insert into main database with new density_measurement_id
+            main_cursor.execute(
+                """
+                INSERT INTO densitymeasurements 
+                (density_measurement_id, spt_id, top_depth_m, bottom_depth_m, density_keyword)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+                (
+                    next_measurement_id,
+                    new_spt_id,
+                    top_depth_m,
+                    bottom_depth_m,
+                    density_keyword,
+                ),
+            )
+            next_measurement_id += 1
+            copied_count += 1
+
+    print(f"Copied {copied_count} density measurements from {source_name} database")
+
+
 def copy_spt_data_from_temp_db(
     temp_db_path: Path, main_conn: sqlite3.Connection, source_name: str
 ):
@@ -293,6 +354,7 @@ def copy_spt_data_from_temp_db(
         copy_soil_measurements_and_types(
             temp_conn, main_conn, spt_id_mapping, source_name
         )
+        copy_density_measurements(temp_conn, main_conn, spt_id_mapping, source_name)
 
 
 def main():
