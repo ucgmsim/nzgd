@@ -4,16 +4,16 @@ subdirectories:
   failed_cpt_trace: "failed_cpt_trace_extractions_per_record"
   supplemental_values: "extracted_supplemental_values"
 
-output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p4p2_20251127.db"
+output_db_path : "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p4p3_20260217.db"
 
-temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p4p2_20251127.db"
-temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p4p2_20251127.db"
+temp_spt_ags_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_ags_v0p4p3_20260217.db"
+temp_spt_pdf_db: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/temp_spt_pdf_v0p4p3_20260217.db"
 
-spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p4p2_20251127.csv"
+spt_ags_log_file_path: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_log_v0p4p3_20260217.csv"
 spt_ags_extraction_warnings_dir: "/home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/spt_ags_extraction_warnings"
 
-all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values_v0p4p2_20251127.csv"
-cpt_supplemental_values_filename: "cpt_supplemental_values_v0p4p2_20251127.csv"
+all_potential_cpt_supplemental_values_filename: "all_potential_cpt_supplemental_values_v0p4p3_20260217.csv"
+cpt_supplemental_values_filename: "cpt_supplemental_values_v0p4p3_20260217.csv"
 
 soil_type_unit_weights_filename: "soil_type_unit_weights.csv"
 
