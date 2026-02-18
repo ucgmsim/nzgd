@@ -12,6 +12,7 @@ from nzgd.extract.cpt import workflow
 
 if __name__ == "__main__":
     nzgd_index_df = pd.read_csv(str(constants.INDEX_FILE_PATH))
+
     cpt_nzgd_ids = set(
         nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist()
     )
