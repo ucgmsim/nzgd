@@ -1,5 +1,7 @@
 """Data conditioning and preprocessing for NZGD extractions."""
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -159,9 +161,20 @@ def remove_duplicate_extractions(
     seen_dataframes = []
     unique_extractions = []
 
-    def get_file_sheet_str(sheet_extraction):
+    def get_file_sheet_str(
+        sheet_extraction: data_structures.SheetExtractionResult,
+    ) -> str:
         file_name = sheet_extraction.file_path.name
-        nzgd_id = int(file_name.split("_")[1])
+
+        # Some NZGD records such as NZGD 1327 have files with names like
+        # 'CPT_TT1327_AGS01.ags', so we use a regular expression to strip leading or
+        # trailing alphabetical characters like 'TT' (Tonkin+Taylor).
+        nzgd_id_possibly_including_strs = file_name.split("_")[1]
+        nzgd_id_stripped_of_leading_or_trailing_strs = re.sub(
+            r"^[A-Za-z]+|[A-Za-z]+$", "", nzgd_id_possibly_including_strs
+        )
+        nzgd_id = int(nzgd_id_stripped_of_leading_or_trailing_strs)
+
         sheet_name = sheet_extraction.sheet_name
 
         return f"{nzgd_id}_AND_{file_name}_AND_{sheet_name}"
