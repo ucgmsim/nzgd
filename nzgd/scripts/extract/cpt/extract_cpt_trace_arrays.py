@@ -1,8 +1,8 @@
 """Script to extract CPT data arrays from NZGD source files."""
 
 import multiprocessing as mp
-import os
 
+# import os
 import pandas as pd
 from natsort import natsorted
 from tqdm import tqdm
@@ -13,9 +13,11 @@ from nzgd.extract.cpt import workflow
 if __name__ == "__main__":
     nzgd_index_df = pd.read_csv(str(constants.INDEX_FILE_PATH))
 
-    cpt_nzgd_ids = set(
-        nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist()
-    )
+    # cpt_nzgd_ids = set(
+    #     nzgd_index_df[nzgd_index_df["Type"] == "SCP"]["nzgd_id"].tolist()
+    # )
+
+    cpt_nzgd_ids = [218101]
 
     downloaded_nzgd_paths = natsorted(list(constants.NZGD_SOURCE_DATA_DIR.glob("*")))
 
@@ -23,7 +25,8 @@ if __name__ == "__main__":
         path for path in downloaded_nzgd_paths if int(path.name) in cpt_nzgd_ids
     ]
 
-    NUM_WORKERS = os.cpu_count()
+    # NUM_WORKERS = os.cpu_count()
+    NUM_WORKERS = 1
     results = []
 
     with mp.Pool(processes=NUM_WORKERS) as pool:
