@@ -37,8 +37,6 @@ def select_columns_for_one_sheet(
     ):
         return sheet_extraction_result
 
-    print()
-
     # Keep only one of repeated column names in the spreadsheet.
     sheet_extraction_result = keep_one_of_repeated_column_names(
         sheet_extraction_result,
