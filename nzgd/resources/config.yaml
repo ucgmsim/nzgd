@@ -120,6 +120,11 @@ known_special_cases:
   CPT_59414: "corrupt_file - all data in first column"
   CPT_73271: "corrupt_file - data columns are not recognized"
 
+column_data_validation:
+  min_data_rows_for_scoring: 10  # Minimum number of data rows needed for magnitude-based scoring
+  depth_monotonicity_threshold: 0.9  # Fraction of successive depth diffs that must be > 0
+  max_negative_fraction_for_fs: 0.2  # fs should have < 20% negative values (small negatives are from measurement uncertainty)
+
 infer_wrong_units_thresholds:
   typical_depth_step_size_m: 1e-2 # Depth step sizes are typically around 1cm.
   smaller_depth_step_size_implies_not_in_m: 1e-3 # Depth step sizes are typically around 1cm, so if it's much smaller than this, the depth values are likely not in m.
@@ -129,6 +134,9 @@ infer_wrong_units_thresholds:
   fs_kpa_threshold: 10 # fs values consistently exceeding this threshold indicates that fs is in kPa.
   u_kpa_threshold: 5 # u values consistently exceeding this threshold indicates that u is in kPa.
   percent_exceeding_threshold: 75.0 # If greater than this percentage of data points exceed a parameter's threshold value, the parameter will be converted to its corresponding unit.
+  max_plausible_qc_mpa: 500 # qc values above this are certainly in kPa, not MPa (cone resistance rarely exceeds 200 MPa)
+  max_plausible_fs_mpa: 5 # fs values above this are certainly in kPa, not MPa (sleeve friction rarely exceeds 2 MPa)
+  max_plausible_u_mpa: 10 # |u| values above this are certainly in kPa, not MPa (pore pressure rarely exceeds 5 MPa)
 
 # Bounds for validation of extracted parameters
 allowed_bounds_for_extracted_values:

@@ -91,6 +91,8 @@ INFER_WRONG_UNITS_THRESHOLDS = CONFIG[
     "infer_wrong_units_thresholds"
 ]  # Dictionary with keys as column names and values as thresholds
 
+COLUMN_DATA_VALIDATION = CONFIG["column_data_validation"]
+
 
 class ExcelEngine(enum.StrEnum):
     """Enumeration of the investigation types for which data can be extracted.

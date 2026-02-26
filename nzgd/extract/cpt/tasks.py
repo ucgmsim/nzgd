@@ -308,21 +308,9 @@ def excel_skip_nondata_rows_at_start(
 
     first_data_row_index = data_row_indices[0]
 
-    # Find empty rows between header and data
-    empty_rows_between = extracted_data_df[
-        (extracted_data_df.isna().all(axis=1))
-        & (extracted_data_df.index > header_row_index)
-        & (extracted_data_df.index < first_data_row_index)
-    ].index
-
-    # Calculate the number of rows to skip
-    rows_to_skip = header_row_index + len(empty_rows_between)
-
-    # The column names are stored as the DataFrame's column names so we skip the
-    # original header row and any empty rows between the header and the first row of
-    # data. The first included row is (rows_to_skip + 1) to start from the first
-    # data row
-    return extracted_data_df.iloc[rows_to_skip + 1 :].reset_index(
+    # Skip all rows before the first data row (header rows, units rows,
+    # empty rows, and any other non-data rows between header and data)
+    return extracted_data_df.iloc[first_data_row_index:].reset_index(
         drop=True,
     )
 
@@ -513,10 +501,23 @@ def infer_unit_conversions_for_sheet(
             f"{list(constants.COLUMN_DESCRIPTIONS)[0]} was multiplied by a guessed scaling factor of {guessed_scaling_factor}",
         )
 
+    # Compute max values for secondary plausibility checks.
+    # If the max value exceeds what's physically plausible in MPa, the data
+    # is certainly in kPa regardless of what percentage exceeds the threshold.
+    max_qc = np.nanmax(
+        converted_units_data_df[list(constants.COLUMN_DESCRIPTIONS)[1]],
+    )
+    max_fs = np.nanmax(
+        converted_units_data_df[list(constants.COLUMN_DESCRIPTIONS)[2]],
+    )
+    max_abs_u = np.nanmax(
+        np.abs(converted_units_data_df[list(constants.COLUMN_DESCRIPTIONS)[3]]),
+    )
+
     if (
         percentage_qc_exceeding_kpa_threshold
         > constants.INFER_WRONG_UNITS_THRESHOLDS["percent_exceeding_threshold"]
-    ):
+    ) or max_qc > constants.INFER_WRONG_UNITS_THRESHOLDS["max_plausible_qc_mpa"]:
         # qc values are likely in kPa
         converted_units_data_df.loc[:, list(constants.COLUMN_DESCRIPTIONS)[1]] /= 1000.0
         inferred_unit_conversions.append(
@@ -524,8 +525,8 @@ def infer_unit_conversions_for_sheet(
         )
     if (
         percentage_fs_exceeding_kpa_threshold
-        > constants.INFER_WRONG_UNITS_THRESHOLDS["fs_kpa_threshold"]
-    ):
+        > constants.INFER_WRONG_UNITS_THRESHOLDS["percent_exceeding_threshold"]
+    ) or max_fs > constants.INFER_WRONG_UNITS_THRESHOLDS["max_plausible_fs_mpa"]:
         # fs values are likely in kPa
         converted_units_data_df.loc[:, list(constants.COLUMN_DESCRIPTIONS)[2]] /= 1000.0
         inferred_unit_conversions.append(
@@ -535,7 +536,7 @@ def infer_unit_conversions_for_sheet(
     if (
         percentage_u_exceeding_kpa_threshold
         > constants.INFER_WRONG_UNITS_THRESHOLDS["percent_exceeding_threshold"]
-    ):
+    ) or max_abs_u > constants.INFER_WRONG_UNITS_THRESHOLDS["max_plausible_u_mpa"]:
         # u values are likely in kPa
         converted_units_data_df.loc[:, list(constants.COLUMN_DESCRIPTIONS)[3]] /= 1000.0
         inferred_unit_conversions.append(
@@ -1023,6 +1024,43 @@ def make_error_summary_df(
     )
 
 
+def _update_col_info_matched_strings(
+    col_info: data_structures.AllCPTColsSearchResults,
+    final_col_names: list[str],
+) -> data_structures.AllCPTColsSearchResults:
+    """Update the matched_string in each SearchForColResults to use the final column name.
+
+    This is needed because the column names may have been modified by
+    make_column_names_unique after the scoring-based header combination
+    search was done.
+
+    """
+    def update_results(
+        results: list[data_structures.SearchForColResults],
+    ) -> list[data_structures.SearchForColResults]:
+        updated = []
+        for r in results:
+            col_idx = r.col_index_in_line
+            if col_idx < len(final_col_names):
+                updated.append(
+                    data_structures.SearchForColResults(
+                        col_index_in_line=col_idx,
+                        search_term=r.search_term,
+                        matched_string=str(final_col_names[col_idx]),
+                    )
+                )
+            else:
+                updated.append(r)
+        return updated
+
+    return data_structures.AllCPTColsSearchResults(
+        col1_search_result=update_results(col_info.col1_search_result),
+        col2_search_result=update_results(col_info.col2_search_result),
+        col3_search_result=update_results(col_info.col3_search_result),
+        col4_search_result=update_results(col_info.col4_search_result),
+    )
+
+
 def load_excel_sheet(
     file_path: Path,
     sheet_name: str,
@@ -1062,54 +1100,90 @@ def load_excel_sheet(
             sheet_name=sheet_name.replace("-", "_"),
         )
 
-    try:
-        multi_row_header_indices = search.find_row_indices_of_header_lines(
+    # Try the new scoring-based approach: find all candidate header rows,
+    # try multiple combinations, and pick the best based on data magnitude
+    # validation. Fall back to the existing approach if scoring fails.
+    candidate_header_rows = search.find_all_candidate_header_rows(extracted_data_df)
+
+    best_header_result = None
+    if len(candidate_header_rows) > 0:
+        best_header_result = search.find_best_header_combination(
             extracted_data_df,
+            candidate_header_rows,
         )
-    except errors.FileProcessingError as e:
-        return data_structures.SheetExtractionResult(
-            extraction=make_error_summary_df(
+
+    if best_header_result is not None:
+        header_row_index, combined_header, possible_col_names_with_info = (
+            best_header_result
+        )
+        # Write the winning combined header into the DataFrame at the header row
+        for col_idx, val in enumerate(combined_header):
+            if col_idx < extracted_data_df.shape[1]:
+                extracted_data_df.iloc[header_row_index, col_idx] = val
+        extracted_data_df.columns = extracted_data_df.iloc[
+            header_row_index
+        ].to_numpy()
+        # Make column names unique by adding suffixes to duplicates
+        extracted_data_df = make_column_names_unique(extracted_data_df)
+        # Update matched_string in col_info to use the final column names
+        # (which may have been modified by make_column_names_unique).
+        # Do NOT re-search since the scoring already validated the assignment
+        # and re-searching can produce false positives from noisy combined headers.
+        final_col_names = list(extracted_data_df.columns)
+        possible_col_names_with_info = _update_col_info_matched_strings(
+            possible_col_names_with_info, final_col_names,
+        )
+    else:
+        # Fallback: use the existing header detection approach
+        try:
+            multi_row_header_indices = search.find_row_indices_of_header_lines(
+                extracted_data_df,
+            )
+        except errors.FileProcessingError as e:
+            return data_structures.SheetExtractionResult(
+                extraction=make_error_summary_df(
+                    file_path=file_path,
+                    error_category=str(e).split("-")[0],
+                    error_details=str(e).split("-")[1].strip(),
+                    sheet_name=sheet_name.replace("-", "_"),
+                ),
                 file_path=file_path,
-                error_category=str(e).split("-")[0],
-                error_details=str(e).split("-")[1].strip(),
                 sheet_name=sheet_name.replace("-", "_"),
-            ),
-            file_path=file_path,
-            sheet_name=sheet_name.replace("-", "_"),
-        )
+            )
 
-    if len(multi_row_header_indices) == 0:
-        return data_structures.SheetExtractionResult(
-            extraction=make_error_summary_df(
+        if len(multi_row_header_indices) == 0:
+            return data_structures.SheetExtractionResult(
+                extraction=make_error_summary_df(
+                    file_path=file_path,
+                    error_category="no_header_row",
+                    error_details="sheet has no header row",
+                    sheet_name=sheet_name.replace("-", "_"),
+                ),
                 file_path=file_path,
-                error_category="no_header_row",
-                error_details="sheet has no header row",
                 sheet_name=sheet_name.replace("-", "_"),
-            ),
-            file_path=file_path,
-            sheet_name=sheet_name.replace("-", "_"),
+            )
+
+        extracted_data_df, header_row_index = combine_multiple_header_rows(
+            extracted_data_df,
+            multi_row_header_indices,
         )
 
-    extracted_data_df, header_row_index = combine_multiple_header_rows(
-        extracted_data_df,
-        multi_row_header_indices,
-    )
+        #######################################################
+        # Set dataframe's headers/column names
+        extracted_data_df.columns = extracted_data_df.iloc[
+            header_row_index
+        ].to_numpy()
 
-    #######################################################
-    # Set dataframe's headers/column names. Note that .to_numpy() is used so that the
-    # row's index in the DataFrame is not included in the header
-    extracted_data_df.columns = extracted_data_df.iloc[header_row_index].to_numpy()
+        # Make column names unique by adding suffixes to duplicates
+        extracted_data_df = make_column_names_unique(extracted_data_df)
 
-    # Make column names unique by adding suffixes to duplicates
-    extracted_data_df = make_column_names_unique(extracted_data_df)
-
-    possible_col_names_with_info = (
-        search.remove_repeated_column_finds_across_all_params(
-            search.search_line_for_all_needed_cells(
-                list(extracted_data_df.columns),
-            ),
+        possible_col_names_with_info = (
+            search.remove_repeated_column_finds_across_all_params(
+                search.search_line_for_all_needed_cells(
+                    list(extracted_data_df.columns),
+                ),
+            )
         )
-    )
 
     extracted_data_df = excel_skip_nondata_rows_at_start(
         extracted_data_df,
