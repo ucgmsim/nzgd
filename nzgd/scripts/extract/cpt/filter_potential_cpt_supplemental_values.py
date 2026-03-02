@@ -655,7 +655,7 @@ for key, values in extracted_values_dict.items():
     nzgd_id, file_name, sheet_name = key
     row_data = {
         "nzgd_id": nzgd_id,
-        "file_name": filename,
+        "file_name": file_name,
         "sheet_name": sheet_name,
         "termination_reason": values.termination_reason,
         "ground_water_level": values.ground_water_level,
