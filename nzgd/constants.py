@@ -623,6 +623,7 @@ quantity_to_search_term = {
     QuantityToExtract.ground_water_level: [
         "gwl",
         "swl",
+        "mbgl", # "meters below ground level"
         "ground water",
         "waterlevel",
         "water level",
