@@ -233,6 +233,11 @@ if __name__ == "__main__":
         constants.OUTPUT_DB_PATH,
     )
 
+    print("Clearing existing CPT tables...")
+    with sqlite3.connect(output_path) as db:
+        db.execute("DELETE FROM cptmeasurements")
+        db.execute("DELETE FROM cptreport")
+
     print("Writing CPT supplemental values to database...")
     with sqlite3.connect(output_path) as db:
         serialize_cpt_reports(
