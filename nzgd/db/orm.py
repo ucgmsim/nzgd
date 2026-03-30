@@ -298,6 +298,9 @@ class SPTMeasurements(BaseModel):
     ISPT_NVAL = IntegerField(null=True)
     """int: The number of blows extracted from the ISPT_NVAL field of an AGS file."""
 
+    ISPT_REP = IntegerField(null=True)
+    """int: The number of blows extracted from the ISPT_REP field of an AGS file."""
+
 
 class DensityMeasurements(BaseModel):
     """Represents depth-specific density measurements extracted from GEOL table.

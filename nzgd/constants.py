@@ -623,7 +623,7 @@ quantity_to_search_term = {
     QuantityToExtract.ground_water_level: [
         "gwl",
         "swl",
-        "mbgl", # "meters below ground level"
+        "mbgl",  # "meters below ground level"
         "ground water",
         "waterlevel",
         "water level",
@@ -721,6 +721,25 @@ DEFAULT_SPT_EFFICIENCY_PERCENT = CONFIG["default_spt_efficiency_percent"]
 DEFAULT_BOREHOLE_DIAMETER_mm = CONFIG["default_borehole_diameter_mm"]
 BUFFER_BELOW_LOWEST_MEASUREMENT_DEPTH_m = CONFIG[
     "buffer_below_lowest_measurement_depth_m"
+]
+
+# AGS ISPT column names used during extraction and output normalization.
+ISPT_COLUMNS = [
+    "ISPT_TOP",
+    "ISPT_MAIN",
+    "ISPT_NVAL",
+    "ISPT_REP",
+    "ISPT_WAT",
+    "ISPT_ERAT",
+]
+
+DESIRED_ISPT_COLUMNS = [
+    "Depth",
+    "ISPT_MAIN",
+    "ISPT_NVAL",
+    "ISPT_REP",
+    "ISPT_WAT",
+    "ISPT_ERAT",
 ]
 
 # Density-related keywords found in AGS files (loaded from config.yaml)

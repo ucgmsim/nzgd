@@ -61,15 +61,7 @@ import pandas as pd
 import tqdm
 import typer
 
-from nzgd.constants import (
-    DENSITY_MODIFIERS,
-    DENSITY_RELATED_KEYWORDS,
-    INDEX_FILE_PATH,
-    MAX_ALLOWED_GWL,
-    MIN_ALLOWED_GWL,
-    SPT_AGS_EXTRACTION_WARNINGS_DIR,
-    SPT_AGS_LOG_FILE_PATH,
-)
+from nzgd import constants
 from nzgd.extract.bh.ags_parser import load_ags_tables
 from nzgd.extract.bh.utils import SPTReport, extract_soil_report
 
@@ -619,11 +611,11 @@ def _find_matching_loca_from_investigation(
 def _load_index_data() -> pd.DataFrame:
     """Load NZGD index metadata."""
     try:
-        return pd.read_csv(INDEX_FILE_PATH, low_memory=False)
+        return pd.read_csv(constants.INDEX_FILE_PATH, low_memory=False)
     except FileNotFoundError:
-        warnings.warn(f"Index file not found at {INDEX_FILE_PATH}")
+        warnings.warn(f"Index file not found at {constants.INDEX_FILE_PATH}")
     except Exception as exc:
-        warnings.warn(f"Failed to load index file {INDEX_FILE_PATH}: {exc}")
+        warnings.warn(f"Failed to load index file {constants.INDEX_FILE_PATH}: {exc}")
     return pd.DataFrame(columns=["nzgd_id", "InvestigationId"])
 
 
@@ -781,14 +773,16 @@ def _extract_density_from_description(description: str) -> list[str]:
 
     # Separate single-word and multi-word keywords
     single_word_keywords = [
-        kw for kw in DENSITY_RELATED_KEYWORDS if " " not in kw and "-" not in kw
+        kw
+        for kw in constants.DENSITY_RELATED_KEYWORDS
+        if " " not in kw and "-" not in kw
     ]
     multi_word_keywords = [
-        kw for kw in DENSITY_RELATED_KEYWORDS if " " in kw or "-" in kw
+        kw for kw in constants.DENSITY_RELATED_KEYWORDS if " " in kw or "-" in kw
     ]
 
     # First, add patterns with modifiers + single-word keywords (most specific)
-    for modifier_pattern, modifier_text in DENSITY_MODIFIERS:
+    for modifier_pattern, modifier_text in constants.DENSITY_MODIFIERS:
         for keyword in single_word_keywords:
             keyword_escaped = re.escape(keyword)
             pattern = rf"{modifier_pattern}\s+{keyword_escaped}\b"
@@ -1028,13 +1022,8 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         geol_location_id_col = _get_location_id_column_name(tables["GEOL"])
 
     # Build column lists, only including location ID column if it exists
-    ispt_columns = [
-        "ISPT_TOP",
-        "ISPT_MAIN",
-        "ISPT_NVAL",
-        "ISPT_WAT",
-        "ISPT_ERAT",
-    ]
+    # Copy the constant list (using list()) so we can safely prepend the location ID column.
+    ispt_columns = list(constants.ISPT_COLUMNS)
     if ispt_location_id_col:
         ispt_columns.insert(0, ispt_location_id_col)
 
@@ -1046,13 +1035,8 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     if geol_location_id_col:
         geology_columns.insert(0, geol_location_id_col)
 
-    desired_ispt_columns = [
-        "Depth",
-        "ISPT_MAIN",
-        "ISPT_NVAL",
-        "ISPT_WAT",
-        "ISPT_ERAT",
-    ]
+    # Copy the constant list (using list()) so we can safely prepend the location ID column.
+    desired_ispt_columns = list(constants.DESIRED_ISPT_COLUMNS)
     if ispt_location_id_col:
         desired_ispt_columns.insert(0, ispt_location_id_col)
 
@@ -1187,7 +1171,10 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
 
     # Validate groundwater_level against allowed bounds
     if groundwater_level is not None:
-        if groundwater_level > MAX_ALLOWED_GWL or groundwater_level < MIN_ALLOWED_GWL:
+        if (
+            groundwater_level > constants.MAX_ALLOWED_GWL
+            or groundwater_level < constants.MIN_ALLOWED_GWL
+        ):
             groundwater_level = None
 
     # Try to extract efficiency from report text only if not already found
@@ -1287,7 +1274,7 @@ def process_borehole_no_exceptions(
     # Use process ID and borehole ID to ensure uniqueness
     process_id = os.getpid()
     status_file = (
-        SPT_AGS_EXTRACTION_WARNINGS_DIR
+        constants.SPT_AGS_EXTRACTION_WARNINGS_DIR
         / f"extraction_status_{process_id}_{borehole_id}.csv"
     )
 
@@ -1344,11 +1331,13 @@ def process_borehole_no_exceptions(
 
 def _consolidate_warning_files():
     """Consolidate all extraction status CSV files from worker processes into a single file."""
-    if not SPT_AGS_EXTRACTION_WARNINGS_DIR.exists():
+    if not constants.SPT_AGS_EXTRACTION_WARNINGS_DIR.exists():
         return
 
     # Find all extraction status CSV files
-    status_files = list(SPT_AGS_EXTRACTION_WARNINGS_DIR.glob("extraction_status_*.csv"))
+    status_files = list(
+        constants.SPT_AGS_EXTRACTION_WARNINGS_DIR.glob("extraction_status_*.csv")
+    )
 
     if not status_files:
         return
@@ -1373,7 +1362,7 @@ def _consolidate_warning_files():
     )
 
     consolidated_file = (
-        SPT_AGS_EXTRACTION_WARNINGS_DIR / "all_spt_ags_extraction_status.csv"
+        constants.SPT_AGS_EXTRACTION_WARNINGS_DIR / "all_spt_ags_extraction_status.csv"
     )
     consolidated_df.to_csv(consolidated_file, index=False)
 
@@ -1384,6 +1373,28 @@ def _consolidate_warning_files():
         except Exception:
             # Ignore errors when deleting files
             pass
+
+
+def _row_value_or_none(row: pd.Series, col: str) -> Any:
+    """Return the value of a column from a row, or None if it is missing or empty.
+
+    Parameters
+    ----------
+    row : pd.Series
+        A row from a pandas DataFrame, typically obtained via ``iterrows()``.
+    col : str
+        The column name to look up in ``row``.
+
+    Returns
+    -------
+    Any
+        The value at ``row[col]`` if the column is present, the value is not
+        null (``pd.isna``), and the value is not an empty string.
+        Returns ``None`` otherwise.
+    """
+    if col not in row or pd.isna(row[col]) or row[col] == "":
+        return None
+    return row[col]
 
 
 def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
@@ -1484,37 +1495,36 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             for _, row in report.spt_measurements.iterrows():
                 # Handle NaN/None values by converting to None for SQLite
                 depth = row["Depth"] if pd.notna(row["Depth"]) else None
-                ispt_main_n = (
-                    row["ISPT_MAIN"]
-                    if pd.notna(row["ISPT_MAIN"]) and row["ISPT_MAIN"] != ""
-                    else None
-                )
-                ispt_nval = (
-                    row["ISPT_NVAL"]
-                    if "ISPT_NVAL" in row
-                    and pd.notna(row["ISPT_NVAL"])
-                    and row["ISPT_NVAL"] != ""
-                    else None
-                )
+
+                ispt_main_n = _row_value_or_none(row, "ISPT_MAIN")
+                ispt_nval = _row_value_or_none(row, "ISPT_NVAL")
+                ispt_rep = _row_value_or_none(row, "ISPT_REP")
+
                 cursor.execute(
                     """
-                    INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL, ISPT_REP)
+                    VALUES (?, ?, ?, ?, ?)
                 """,
-                    (report.borehole_id, depth, ispt_main_n, ispt_nval),
+                    (
+                        report.borehole_id,
+                        depth,
+                        ispt_main_n,
+                        ispt_nval,
+                        ispt_rep,
+                    ),
                 )
+
         # Only process soil measurements if the DataFrame is not empty
         if not report.soil_measurements.empty:
             for _, row in report.soil_measurements.iterrows():
                 if not row["soil_types"]:
                     continue
                 # Handle NaN/None values for top_depth and bottom_depth
-                top_depth = row["top_depth"] if pd.notna(row["top_depth"]) else None
+                top_depth = _row_value_or_none(row, "top_depth")
                 bottom_depth = None
                 if "bottom_depth" in row:
-                    bottom_depth = (
-                        row["bottom_depth"] if pd.notna(row["bottom_depth"]) else None
-                    )
+                    bottom_depth = _row_value_or_none(row, "bottom_depth")
+
                 cursor.execute(
                     """
                                    INSERT INTO soilmeasurements (spt_id, top_depth_m, bottom_depth_m)
@@ -1605,7 +1615,7 @@ def mine_borehole_log(
 
     """
     # Ensure warnings directory exists
-    SPT_AGS_EXTRACTION_WARNINGS_DIR.mkdir(parents=True, exist_ok=True)
+    constants.SPT_AGS_EXTRACTION_WARNINGS_DIR.mkdir(parents=True, exist_ok=True)
 
     with multiprocessing.Pool() as pool:
         results = [
@@ -1625,8 +1635,8 @@ def mine_borehole_log(
 
     log_df = pd.DataFrame(log_rows, columns=LOG_COLUMNS)
     log_df.sort_values(by=["nzgd_id", "AGS_file_name"], inplace=True, ignore_index=True)
-    SPT_AGS_LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    log_df.to_csv(SPT_AGS_LOG_FILE_PATH, index=False)
+    constants.SPT_AGS_LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    log_df.to_csv(constants.SPT_AGS_LOG_FILE_PATH, index=False)
 
     # Consolidate all warning files into a single file
     _consolidate_warning_files()
