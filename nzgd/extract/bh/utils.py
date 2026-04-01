@@ -79,6 +79,9 @@ class SPTReport:
     extracted_gwl: float | None
     """The extracted ground water level for the SPT (borehole) report."""
 
+    extracted_diameter: float | None
+    """The extracted borehole diameter (mm)."""
+
     source_file: Path
     """The path to the report."""
 

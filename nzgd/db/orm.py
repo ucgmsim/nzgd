@@ -247,6 +247,9 @@ class SPTReport(BaseModel):
     extracted_gwl_m = FloatField(null=True)
     """float: The extracted ground water level for the SPT (borehole) report."""
 
+    borehole_diameter = FloatField(null=True)
+    """float: The extracted borehole diameter."""
+
     source_file = TextField()
     """str: The source file of the extracted data."""
 
