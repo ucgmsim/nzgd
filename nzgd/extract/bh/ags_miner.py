@@ -1,14 +1,14 @@
 """Borehole Report Processor
 --------------------------
 
-This script is a command-line interface tool for processing borehole PDF reports
+This script is a command-line interface tool for processing borehole AGS reports
 to extract Standard Penetration Test (SPT) values and associated soil classifications.
 It consolidates the extracted data into a structured format, which is saved as a
 Parquet file for further analysis.
 
 Features
 --------
-- Extracts depth, SPT values, and soil classifications from borehole PDF reports.
+- Extracts depth, SPT values, and soil classifications from borehole AGS reports.
 - Supports bulk processing of multiple reports in a directory.
 - Outputs consolidated data in a Parquet format for efficient storage and retrieval.
 
@@ -21,14 +21,13 @@ Run the script from the command line with the required arguments. Example usage:
 Positional Arguments
 ---------------------
 report_directory : Path
-    Path to the directory containing borehole PDF reports.
+    Path to the directory containing borehole AGS reports.
 output_path : Path
     Path to save the consolidated output as a Parquet file.
 
 Dependencies
 ------------
 - Python >= 3.8
-- pdfminer.six
 - pandas
 - numpy
 - typer
@@ -36,7 +35,7 @@ Dependencies
 
 Notes
 -----
-- Ensure that the input PDF reports are formatted in a way that the script can parse.
+- Ensure that the input AGS reports are formatted in a way that the script can parse.
 - The script attempts to extract data robustly but may fail for non-standard or
   corrupted reports.
 - Warnings are emitted for reports that cannot be processed, but execution will
@@ -1597,14 +1596,14 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
 
 
 @app.command(
-    help="Mine an individual borehole PDF and output a JSON file.",
+    help="Mine an individual borehole AGS and output a JSON file.",
     name="single",
 )
 def mine_individual_borehole(
-    borehole_pdf: Annotated[
+    borehole_ags: Annotated[
         Path,
         typer.Argument(
-            help="Path to borehole PDF file to read.",
+            help="Path to borehole AGS file to read.",
             exists=True,
             readable=True,
             dir_okay=False,
@@ -1623,20 +1622,20 @@ def mine_individual_borehole(
 
     Parameters
     ----------
-    borehole_pdf : Path
-        Path to the borehole log PDF file.
+    borehole_ags : Path
+        Path to the borehole log AGS file.
     output_path : Path
         Path to the output file (a JSON file).
 
     """
-    match = re.search(r"(\d+)", borehole_pdf.stem)
+    match = re.search(r"(\d+)", borehole_ags.stem)
     if not match:
         raise ValueError(
-            f"Could not determine NZGD ID from file name: {borehole_pdf.name}"
+            f"Could not determine NZGD ID from file name: {borehole_ags.name}"
         )
     borehole_id = int(match.group(1))
 
-    result = process_borehole(borehole_id, borehole_pdf)
+    result = process_borehole(borehole_id, borehole_ags)
     spt_report = result.report
     with open(output_path, "w") as output:
         json.dump(
