@@ -1081,7 +1081,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     )
 
     # Try to extract geology data if GEOL table exists
-    if "GEOL" in tables and tables.get("GEOL") is not None:
+    if tables.get("GEOL") is not None:
         geol_df = tables["GEOL"][geology_columns].iloc[2:].copy()
         geol_df = _filter_by_investigation(geol_df, investigation_id, diagnostics)
 
@@ -1177,12 +1177,18 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             density_measurements = pd.DataFrame(density_rows)
 
     diameter = None
-    if "HDIA" in tables and tables.get("HDIA") is not None:
+    if tables.get("HDIA") is not None:
         hdia_df = tables["HDIA"].iloc[2:].copy()
-        hdia_location_id_col = _get_location_id_column_name(tables["HDIA"])
-        if hdia_location_id_col:
-            hdia_df = _filter_by_investigation(hdia_df, investigation_id, diagnostics)
+        hdia_df = _filter_by_investigation(hdia_df, investigation_id, diagnostics)
+        
+        # Note: HDIA can have multiple rows (different diameters at different depths
+        # for a telescoped borehole). For SPT correction, the diameter at the test 
+        # depth matters. Grabbing the first parseable value (typically the top-of-hole 
+        # diameter) is a known simplification.
         diameter = _first_numeric_value(hdia_df, "HDIA_DIAM")
+
+    if diameter is None:
+        warnings.warn(f"No diameter data found in {report}")
 
     efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
     groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
@@ -1243,11 +1249,10 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     )
     has_density_data = not density_measurements.empty
     has_efficiency = efficiency is not None
-    has_diameter_data = diameter is not None
 
-    if not (has_spt_data or has_soil_data or has_density_data or has_efficiency or has_diameter_data):
+    if not (has_spt_data or has_soil_data or has_density_data or has_efficiency):
         raise ValueError(
-            f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, density measurements, efficiency, or diameter found"
+            f"No meaningful data extracted from {report}: no SPT measurements, soil measurements, density measurements, or efficiency found"
         )
 
     return BoreholeProcessingResult(
