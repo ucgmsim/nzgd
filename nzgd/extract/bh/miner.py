@@ -339,7 +339,8 @@ def extract_depth_scale(
     raise ValueError("Failed to converge to a valid depth column")
 
 
-RATIO_RE = re.compile(r"(\d{1,3}(\.\d+)?)\s*%")
+# RATIO_RE allows a single optional space after the decimal point to catch cases like "89. 9%" from NZGD ID 215925
+RATIO_RE = re.compile(r"(\d{1,3}(?:\.\s?\d+)?)\s*%")
 LABEL_RE = re.compile(r"\b(ratio|efficien(t|cy)|hammer\s+energy)\b", re.IGNORECASE)
 
 
@@ -374,7 +375,10 @@ def get_ratio_near(node: TextObject, page: list[TextObject]) -> float | None:
                     abs(m.start(0) - label_start),
                     abs(m.end(0) - label_end),
                 ),
-            ).group(1),
+            )
+            .group(1)
+            # strip any spaces in the number to handle cases like "89. 9%" from NZGD ID 215925
+            .replace(" ", ""),
         )
 
     efficiency_nodes = [
@@ -382,7 +386,8 @@ def get_ratio_near(node: TextObject, page: list[TextObject]) -> float | None:
     ]
     for efficiency_node in efficiency_nodes:
         if efficiency := re.search(RATIO_RE, efficiency_node.text):
-            return float(efficiency.group(1))
+            # strip any spaces in the number to handle cases like "89. 9%" from NZGD ID 215925
+            return float(efficiency.group(1).replace(" ", ""))
 
     return None
 
