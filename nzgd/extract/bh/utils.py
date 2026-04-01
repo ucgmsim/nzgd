@@ -82,6 +82,9 @@ class SPTReport:
     extracted_diameter: float | None
     """The extracted borehole diameter (mm)."""
 
+    extracted_casing_diameter: float | None
+    """The extracted casing diameter (mm)."""
+
     source_file: Path
     """The path to the report."""
 

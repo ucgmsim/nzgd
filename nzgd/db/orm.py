@@ -250,6 +250,9 @@ class SPTReport(BaseModel):
     borehole_diameter = FloatField(null=True)
     """float: The extracted borehole diameter."""
 
+    casing_diameter = FloatField(null=True)
+    """float: The extracted casing diameter."""
+
     source_file = TextField()
     """str: The source file of the extracted data."""
 

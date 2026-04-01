@@ -100,6 +100,7 @@ class ExtractionStatusLogger:
             "extracted_density_measurements": 1,
             "extracted_efficiency": 1,
             "extracted_diameter": 1,
+            "extracted_casing_diameter": 1,
         }
 
     def __enter__(self):
@@ -149,8 +150,10 @@ class ExtractionStatusLogger:
             and "not found" in warning_text.lower()
         ):
             self.extraction_status["extracted_efficiency"] = 0
-        if "no diameter" in warning_text.lower():
+        if "no diameter" in warning_text.lower() and "casing" not in warning_text.lower():
             self.extraction_status["extracted_diameter"] = 0
+        if "no casing diameter" in warning_text.lower():
+            self.extraction_status["extracted_casing_diameter"] = 0
 
     def update_extraction_status(
         self,
@@ -159,6 +162,7 @@ class ExtractionStatusLogger:
         extracted_density: bool | None = None,
         extracted_efficiency: bool | None = None,
         extracted_diameter: bool | None = None,
+        extracted_casing_diameter: bool | None = None,
     ):
         """Update extraction status based on actual extraction results.
 
@@ -174,6 +178,8 @@ class ExtractionStatusLogger:
             Whether efficiency was extracted.
         extracted_diameter : bool | None
             Whether diameter was extracted.
+        extracted_casing_diameter : bool | None
+            Whether casing diameter was extracted.
         """
         if extracted_spt is not None:
             self.extraction_status["extracted_spt_measurements"] = (
@@ -194,6 +200,10 @@ class ExtractionStatusLogger:
         if extracted_diameter is not None:
             self.extraction_status["extracted_diameter"] = (
                 1 if extracted_diameter else 0
+            )
+        if extracted_casing_diameter is not None:
+            self.extraction_status["extracted_casing_diameter"] = (
+                1 if extracted_casing_diameter else 0
             )
 
     def _write_extraction_status_to_file(self):
@@ -1190,6 +1200,15 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     if diameter is None:
         warnings.warn(f"No diameter data found in {report}")
 
+    casing_diameter = None
+    if tables.get("CDIA") is not None:
+        cdia_df = tables["CDIA"].iloc[2:].copy()
+        cdia_df = _filter_by_investigation(cdia_df, investigation_id, diagnostics)
+        casing_diameter = _first_numeric_value(cdia_df, "CDIA_DIAM")
+
+    if casing_diameter is None:
+        warnings.warn(f"No casing diameter data found in {report}")
+
     efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
     groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
 
@@ -1262,6 +1281,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             efficiency=efficiency,
             extracted_gwl=groundwater_level,
             extracted_diameter=diameter,
+            extracted_casing_diameter=casing_diameter,
             source_file=report,
             spt_measurements=spt_table,
             soil_measurements=geology_table,
@@ -1333,6 +1353,7 @@ def process_borehole_no_exceptions(
                 extracted_density = not report_obj.density_measurements.empty
                 extracted_efficiency = report_obj.efficiency is not None
                 extracted_diameter = report_obj.extracted_diameter is not None
+                extracted_casing_diameter = report_obj.extracted_casing_diameter is not None
 
                 # Update status before context exits
                 status_logger.update_extraction_status(
@@ -1341,6 +1362,7 @@ def process_borehole_no_exceptions(
                     extracted_density=extracted_density,
                     extracted_efficiency=extracted_efficiency,
                     extracted_diameter=extracted_diameter,
+                    extracted_casing_diameter=extracted_casing_diameter,
                 )
 
             return result
@@ -1353,6 +1375,7 @@ def process_borehole_no_exceptions(
                 extracted_density=False,
                 extracted_efficiency=False,
                 extracted_diameter=False,
+                extracted_casing_diameter=False,
             )
             return None
 
@@ -1455,14 +1478,15 @@ def serialize_reports(reports: list[SPTReport], conn: sqlite3.Connection):
             report.efficiency,
             report.extracted_gwl,
             report.extracted_diameter,
+            report.extracted_casing_diameter,
             report.source_file.name,
         )
         for report in reports
     ]
     cursor.executemany(
         """
-        INSERT OR REPLACE INTO sptreport (spt_id, nzgd_id, efficiency, extracted_gwl_m, borehole_diameter, source_file)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO sptreport (spt_id, nzgd_id, efficiency, extracted_gwl_m, borehole_diameter, casing_diameter, source_file)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """,
         report_data,
     )
@@ -1621,6 +1645,7 @@ def mine_individual_borehole(
                 "Borehole File": str(spt_report.source_file),
                 "Efficiency": spt_report.efficiency,
                 "Borehole Diameter": spt_report.extracted_diameter,
+                "Casing Diameter": spt_report.extracted_casing_diameter,
                 "Measurements": spt_report.spt_measurements.sort_values(
                     by="Depth",
                 ).to_dict("records"),
