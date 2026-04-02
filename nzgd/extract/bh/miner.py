@@ -494,6 +494,8 @@ def _analyze_text_objects(
         nzgd_id=borehole_id,
         efficiency=hammer_efficiency,
         extracted_gwl=None,
+        extracted_diameter=None,
+        extracted_casing_diameter=None,
         source_file=report,
         spt_measurements=df,
         soil_measurements=soil_measurements,
