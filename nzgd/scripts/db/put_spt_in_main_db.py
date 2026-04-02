@@ -55,7 +55,7 @@ def copy_spt_reports(
 
     # Get all SPT reports from temporary database
     temp_cursor.execute(
-        "SELECT spt_id, nzgd_id, efficiency, extracted_gwl_m, source_file FROM sptreport"
+        "SELECT spt_id, nzgd_id, efficiency, extracted_gwl_m, borehole_diameter, casing_diameter, source_file FROM sptreport"
     )
     temp_reports = temp_cursor.fetchall()
 
@@ -73,6 +73,8 @@ def copy_spt_reports(
             nzgd_id,
             efficiency,
             extracted_gwl_m,
+            borehole_diameter,
+            casing_diameter,
             source_file,
         ) = temp_report
 
@@ -92,14 +94,16 @@ def copy_spt_reports(
         main_cursor.execute(
             """
             INSERT INTO sptreport 
-            (spt_id, nzgd_id, efficiency, extracted_gwl_m, source_file)
-            VALUES (?, ?, ?, ?, ?)
+            (spt_id, nzgd_id, efficiency, extracted_gwl_m, borehole_diameter, casing_diameter, source_file)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 new_spt_id,
                 nzgd_id,
                 efficiency,
                 extracted_gwl_m,
+                borehole_diameter,
+                casing_diameter,
                 source_file if source_file else "",
             ),
         )

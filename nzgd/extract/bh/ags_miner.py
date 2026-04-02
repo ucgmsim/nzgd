@@ -847,7 +847,7 @@ def _extract_density_from_description(description: str) -> list[str]:
     return found_phrases
 
 
-def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
+def _first_numeric_value(df: pd.DataFrame, column: str, allow_zero: bool = True) -> float | None:
     """Return the first value in `column` convertible to float."""
     if df.empty or column not in df.columns:
         return None
@@ -862,7 +862,10 @@ def _first_numeric_value(df: pd.DataFrame, column: str) -> float | None:
             continue
 
         try:
-            return float(candidate)
+            val = float(candidate)
+            if not allow_zero and val == 0:
+                continue
+            return val
         except (TypeError, ValueError):
             continue
 
@@ -1194,7 +1197,7 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
         # for a telescoped borehole). For SPT correction, the diameter at the test 
         # depth matters. Grabbing the first parseable value (typically the top-of-hole 
         # diameter) is a known simplification.
-        diameter = _first_numeric_value(hdia_df, "HDIA_DIAM")
+        diameter = _first_numeric_value(hdia_df, "HDIA_DIAM", allow_zero=False)
 
     if diameter is None:
         warnings.warn(f"No diameter data found in {report}")
@@ -1203,12 +1206,12 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
     if tables.get("CDIA") is not None:
         cdia_df = tables["CDIA"].iloc[2:].copy()
         cdia_df = _filter_by_investigation(cdia_df, investigation_id, diagnostics)
-        casing_diameter = _first_numeric_value(cdia_df, "CDIA_DIAM")
+        casing_diameter = _first_numeric_value(cdia_df, "CDIA_DIAM", allow_zero=False)
 
     if casing_diameter is None:
         warnings.warn(f"No casing diameter data found in {report}")
 
-    efficiency = _first_numeric_value(spt_table, "ISPT_ERAT")
+    efficiency = _first_numeric_value(spt_table, "ISPT_ERAT", allow_zero=False)
     groundwater_level = _first_numeric_value(spt_table, "ISPT_WAT")
 
     # Validate groundwater_level against allowed bounds
@@ -1227,8 +1230,9 @@ def process_borehole(borehole_id: int, report: Path) -> BoreholeProcessingResult
             report_text = report_data.decode(encoding["encoding"])
 
             if efficiencies := list(re.finditer(RATIO_RE, report_text)):
+                efficiencies = [m for m in efficiencies if float(m.group(1)) != 0]
                 label = re.search(LABEL_RE, report_text)
-                if label:
+                if label and efficiencies:
                     label_start = label.start(0)
                     label_end = label.end(0)
                     efficiency = float(
