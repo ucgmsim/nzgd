@@ -95,23 +95,17 @@ def generate_hash_merge_plan(
     if not cross_nzgd_buckets:
         return []
 
-    # Build edges between nzgd_ids that share a bucket.
-    edges: list[tuple[int, int]] = []
-    bucket_pair_meta: dict[tuple[int, int], list[ReportPairMatch]] = defaultdict(list)
+    # Build a single list of all cross-nzgd_id matched pairs, carrying the hash hex.
+    all_matched_pairs: list[tuple[int, int, int, int, str]] = []
     for h, rids in cross_nzgd_buckets:
+        h_hex = h.hex()
         for a, b in combinations(rids, 2):
             nz_a, nz_b = report_to_nzgd[a], report_to_nzgd[b]
             if nz_a == nz_b:
                 continue
-            edges.append((nz_a, nz_b))
-            key = (min(nz_a, nz_b), max(nz_a, nz_b))
-            bucket_pair_meta[key].append(
-                ReportPairMatch(
-                    canonical_report_id=a if nz_a < nz_b else b,
-                    merged_report_id=b if nz_a < nz_b else a,
-                    metrics={"hash": h.hex()},
-                )
-            )
+            all_matched_pairs.append((nz_a, a, nz_b, b, h_hex))
+
+    edges = [(nz_a, nz_b) for nz_a, _, nz_b, _, _ in all_matched_pairs]
 
     nzgd_to_cluster = connected_components_from_edges(edges)
     clusters: dict[int, list[int]] = defaultdict(list)
@@ -120,30 +114,31 @@ def generate_hash_merge_plan(
 
     plan: list[MergePlanEntry] = []
     for cluster_id, nzgd_ids in clusters.items():
-        # All matched_pairs in this cluster, in (nz_a, rep_a, nz_b, rep_b) form.
-        matched_pairs_sql: list[tuple[int, int, int, int]] = []
-        for h, rids in cross_nzgd_buckets:
-            for a, b in combinations(rids, 2):
-                nz_a, nz_b = report_to_nzgd[a], report_to_nzgd[b]
-                if nz_a in nzgd_ids and nz_b in nzgd_ids and nz_a != nz_b:
-                    matched_pairs_sql.append((nz_a, a, nz_b, b))
+        cluster_set = set(nzgd_ids)
+        cluster_pairs = [
+            (nz_a, rep_a, nz_b, rep_b, h_hex)
+            for nz_a, rep_a, nz_b, rep_b, h_hex in all_matched_pairs
+            if nz_a in cluster_set and nz_b in cluster_set
+        ]
 
-        canonical = select_canonical(conn, nzgd_ids, matched_pairs_sql, table_cfg)
+        canonical = select_canonical(
+            conn, nzgd_ids, [(nz_a, ra, nz_b, rb) for nz_a, ra, nz_b, rb, _ in cluster_pairs], table_cfg
+        )
         # For each non-canonical nzgd_id, build a MergePlanEntry.
         for merged_nz in nzgd_ids:
             if merged_nz == canonical:
                 continue
             # Matched pairs between (canonical, merged_nz): orient with canonical first.
             entry_matched_pairs: list[ReportPairMatch] = []
-            for nz_a, rep_a, nz_b, rep_b in matched_pairs_sql:
+            for nz_a, rep_a, nz_b, rep_b, h_hex in cluster_pairs:
                 if {nz_a, nz_b} == {canonical, merged_nz}:
                     if nz_a == canonical:
                         entry_matched_pairs.append(
-                            ReportPairMatch(rep_a, rep_b, {"hash": True})
+                            ReportPairMatch(rep_a, rep_b, {"hash": h_hex})
                         )
                     else:
                         entry_matched_pairs.append(
-                            ReportPairMatch(rep_b, rep_a, {"hash": True})
+                            ReportPairMatch(rep_b, rep_a, {"hash": h_hex})
                         )
             # Reports unique to merged_nz: query its report ids, subtract matched.
             cur.execute(
