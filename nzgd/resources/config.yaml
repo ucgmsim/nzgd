@@ -197,3 +197,23 @@ nzgd_api_investigation_catalog_path_new: "nzgd_catalogs_from_api/new_nzgd_invest
 
 nzgd_api_file_catalog_path_current: "nzgd_catalogs_from_api/current_nzgd_file_catalog.json.gz"
 nzgd_api_file_catalog_path_new: "nzgd_catalogs_from_api/new_nzgd_file_catalog.json.gz"
+
+deduplication:
+  hash_pass:
+    stream_chunk_size: 100000
+
+  fuzzy_pass:
+    spatial_radius_m: 50
+    date_window_days: 90
+    name_similarity_min: 80
+    trace_score_max: 0.05
+    trace_resample_step_m: 0.05
+
+  calibration:
+    random_pair_sample_size: 5000
+
+  output:
+    deduped_db_suffix: "_deduped"
+    report_filename: "dedup_report.csv"
+    calibration_report_filename: "calibration_report.csv"
+    failures_filename: "dedup_failures.csv"

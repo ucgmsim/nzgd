@@ -833,3 +833,6 @@ NZGD_API_INVESTIGATION_CATALOG_PATH_CURRENT = RESOURCE_PATH / Path(
 NZGD_API_INVESTIGATION_CATALOG_PATH_NEW = RESOURCE_PATH / Path(
     CONFIG["nzgd_api_investigation_catalog_path_new"]
 )
+
+# Deduplication configuration (see docs/superpowers/specs/2026-05-20-cpt-spt-deduplication-design.md)
+DEDUP_CONFIG = CONFIG["deduplication"]
