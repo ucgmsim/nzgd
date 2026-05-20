@@ -264,3 +264,30 @@ def test_spt_with_string_blowcount_values_hashes_without_error(fresh_db: sqlite3
     ).fetchall()
     assert len(audit) == 1
     assert audit[0] == ("hash", "BH")
+
+
+def test_spt_fuzzy_pass_handles_string_blowcount_without_crash(fresh_db: sqlite3.Connection) -> None:
+    """Real-data SPT records have string ISPT_REP values; fuzzy pass must not crash on them."""
+    from nzgd.dedup.pass2_fuzzy import generate_fuzzy_merge_plan
+    add_bh_record(fresh_db, 1, lat=-41.0, lon=174.0, investigation_name="Site Alpha", investigation_date="2024-01-01")
+    add_bh_record(fresh_db, 2, lat=-41.0, lon=174.0001, investigation_name="Site Beta", investigation_date="2024-06-01")
+    fresh_db.execute("INSERT INTO sptreport (spt_id, nzgd_id) VALUES (100, 1)")
+    fresh_db.execute("INSERT INTO sptreport (spt_id, nzgd_id) VALUES (200, 2)")
+    # ISPT_REP holds a string in both records; values DIFFER so the pair is not a real duplicate.
+    fresh_db.executemany(
+        "INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL, ISPT_REP) VALUES (?,?,?,?,?)",
+        [
+            (100, 1.5, 5, 17, "1/4//5/4/4/4,"),
+            (100, 3.0, 7, 19, "3/3//4/5/4/6,"),
+            (100, 4.5, 9, 25, "5/6//6/7/8/8,"),
+            (200, 1.5, 50, 100, "9/9//9/9/9/9,"),  # very different
+            (200, 3.0, 60, 110, "8/8//8/8/8/8,"),
+            (200, 4.5, 70, 120, "7/7//7/7/7/7,"),
+        ],
+    )
+
+    _start_run(fresh_db)
+    # Should not raise. Returns plan (likely empty since traces differ and strings become NaN).
+    plan = generate_fuzzy_merge_plan(fresh_db, SPT_TABLE_CONFIG, _DEFAULT_THRESHOLDS)
+    # No merges expected: the records are distinct and their string blow-counts become NaN, so trace_score is NaN, predicate rejects.
+    assert plan == []

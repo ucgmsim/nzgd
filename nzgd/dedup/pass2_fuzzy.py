@@ -17,6 +17,16 @@ from nzgd.dedup.data_types import MergePlanEntry, ReportPairMatch, TableConfig
 from nzgd.dedup.selection import select_canonical
 
 
+def _coerce_to_float(v) -> float:
+    """Coerce a SQLite cell to float; non-numeric strings become NaN."""
+    if v is None:
+        return math.nan
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return math.nan
+
+
 def _load_active_records(
     conn: sqlite3.Connection, table_cfg: TableConfig
 ) -> list[dict]:
@@ -59,7 +69,7 @@ def _load_traces(
     rows_by_report: dict[int, list[tuple]] = defaultdict(list)
     for row in cur.fetchall():
         rid = row[0]
-        rows_by_report[rid].append(row[1:])
+        rows_by_report[rid].append(tuple(_coerce_to_float(v) for v in row[1:]))
     return {rid: np.array(rows, dtype=float) for rid, rows in rows_by_report.items()}
 
 
