@@ -256,8 +256,15 @@ Takes a `list[MergePlanEntry]` and applies each cluster atomically.
    - Canonical's value NULL → scan merged records' values for this field:
      - All non-NULLs agree → copy that value to canonical; record it in
        `metadata_copied_json` with the source `nzgd_id`.
-     - Multiple distinct non-NULL values → record all candidates in
-       `metadata_conflicts_json`, leave canonical NULL.
+     - Multiple distinct non-NULL values → record all candidate values (each
+       with its source `nzgd_id`) in `metadata_conflicts_json`, then copy any
+       one of them to canonical and record the chosen value + source in
+       `metadata_copied_json`. The selection rule is not significant; the
+       implementation may pick e.g. the value from the smallest
+       `merged_nzgd_id`. Choosing any non-NULL beats leaving the field
+       NULL, since downstream users would otherwise see the merged record's
+       metadata become *less* complete than the source records' were
+       individually.
 3. **For each merged record in the cluster** (CPT case; SPT is analogous):
    - For each matched `(canonical_cpt_id, merged_cpt_id)` pair:
      `DELETE FROM cptvs30estimates WHERE cpt_id = ?` (currently empty,
@@ -330,7 +337,9 @@ Every run produces, in the same directory as the deduped DB:
    - 3-way transitive cluster via hash.
    - Partial-overlap cluster (some reports re-parented, some deleted).
    - Multi-field metadata conflict (canonical NULL, multiple distinct values
-     from merged records — recorded in `metadata_conflicts_json`).
+     from merged records — verify all candidates appear in
+     `metadata_conflicts_json` and that canonical receives one of them, with
+     the choice logged in `metadata_copied_json`).
    - SPT cluster with `soilmeasurements`/`densitymeasurements` rows — verify
      deletion ordering.
    Run script end-to-end; assert against expected `nzgdrecord`, `dedup_audit`,
