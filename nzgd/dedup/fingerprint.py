@@ -10,11 +10,21 @@ from typing import Iterable, Sequence
 # 4 are ASCII 'NaN_').
 _NULL_SENTINEL = b"\x00\x00\x00\x00NaN_"
 
+# Type discriminator bytes — prefixed before each encoded value so that a
+# string representation of a number never collides with the numeric encoding,
+# and NULL/NaN never collides with either.
+_TYPE_NULL = b"\x00"
+_TYPE_NUMERIC = b"\x01"
+_TYPE_STRING = b"\x02"
 
-def _encode_value(v: float | None) -> bytes:
+
+def _encode_value(v) -> bytes:
     if v is None or (isinstance(v, float) and math.isnan(v)):
-        return _NULL_SENTINEL
-    return struct.pack("<d", float(v))
+        return _TYPE_NULL + _NULL_SENTINEL
+    if isinstance(v, (int, float)) and math.isfinite(float(v)):
+        return _TYPE_NUMERIC + struct.pack("<d", float(v))
+    encoded = str(v).encode("utf-8")
+    return _TYPE_STRING + struct.pack("<I", len(encoded)) + encoded
 
 
 def compute_trace_hash(rows: Iterable[Sequence[float | None]]) -> bytes:

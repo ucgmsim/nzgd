@@ -233,3 +233,34 @@ def test_spt_cluster_cascades_dependent_table_deletes(fresh_db: sqlite3.Connecti
     ).fetchone()[0] == 1
     # Merge recorded with record_type = 'BH'
     assert fresh_db.execute("SELECT record_type FROM dedup_audit").fetchall() == [("BH",)]
+
+
+def test_spt_with_string_blowcount_values_hashes_without_error(fresh_db: sqlite3.Connection) -> None:
+    # Regression: SQLite stores ISPT_REP as TEXT even though the schema declares INTEGER.
+    # _encode_value must handle strings without raising ValueError.
+    add_bh_record(fresh_db, 1)
+    add_bh_record(fresh_db, 2)
+    for spt_id in (100, 200):
+        fresh_db.execute(
+            "INSERT INTO sptreport (spt_id, nzgd_id, source_file) VALUES (?,?,?)",
+            (spt_id, spt_id // 100, "synthetic.ags"),
+        )
+        fresh_db.executemany(
+            "INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL, ISPT_REP) "
+            "VALUES (?,?,?,?,?)",
+            [
+                (spt_id, 1.5, None, 17, "1/4//5/4/4/4,"),
+                (spt_id, 3.0, 12,   12, "3/6/6,"),
+                (spt_id, 4.5, 8,    8,  "2/4/4,"),
+            ],
+        )
+
+    run_id = _start_run(fresh_db)
+    plan = generate_hash_merge_plan(fresh_db, SPT_TABLE_CONFIG)
+    apply_merge_plan(fresh_db, plan, run_id, SPT_TABLE_CONFIG)
+
+    audit = fresh_db.execute(
+        "SELECT match_pass, record_type FROM dedup_audit"
+    ).fetchall()
+    assert len(audit) == 1
+    assert audit[0] == ("hash", "BH")
