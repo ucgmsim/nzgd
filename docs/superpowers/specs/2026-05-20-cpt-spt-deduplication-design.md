@@ -450,19 +450,44 @@ tests/dedup/
     test_dedup_pipeline.py  # end-to-end integration scenarios (one test per scenario)
 ```
 
-## Open considerations / future work
+## Deferred — not in v1 scope
 
-- **Reviewable band**: if aggressive auto-merge produces false positives in
-  practice, add a middle band where pairs are emitted to a
-  `pending_dedup_review.csv` instead of being auto-merged. Schema and code
-  changes are localised.
-- **Pipeline integration**: today the package has no integrated end-to-end
-  pipeline. The script is intended to be runnable both standalone and as a
-  future pipeline stage; the input/output contract is a SQLite DB path.
-- **Calibration loop**: the first run produces `calibration_report.csv` but
-  expects a human to update `config.yaml` and re-run. If a second iteration
-  becomes routine, consider a `--auto-calibrate` mode that picks thresholds
-  from the calibration distributions automatically.
-- **Cross-record dedup of derived tables**: `cptvs30estimates` and
-  `sptvs30estimates` are empty in the current DB but already linked into the
-  delete/re-parent logic so future population is safe.
+Items in this section are deliberately **not** part of the v1 implementation
+plan. They are recorded here so the v1 design does not accidentally preclude
+them, and so a future revisit has the context it needs.
+
+### Reviewable band for fuzzy matches
+
+If aggressive auto-merging proves to produce false positives in practice, the
+fuzzy pass should grow a middle band where uncertain pairs are emitted to a
+`pending_dedup_review.csv` for human approval rather than being auto-merged.
+
+**Trigger condition** (when to revisit): during the manual real-data
+validation step described in the testing strategy, if spot-checking the first
+N merges reveals a false-positive rate above ~1% (i.e., merges between
+records that, on inspection, are clearly different physical investigations).
+Below that, the cost of building a review workflow exceeds its expected
+value.
+
+**What this would change** in v1's design (so we know v1 doesn't preclude it):
+- `dedup_audit.match_pass` CHECK constraint widens to include
+  `'pending_review'`.
+- `config.yaml` `fuzzy_pass` section gains a second tier of thresholds
+  (`*_review_min` / `*_review_max`).
+- Pass 2 splits its predicate output into three buckets (auto-merge,
+  pending-review, no-merge); the executor only consumes the auto-merge
+  bucket; a new `reports.py` writer emits the pending-review bucket to CSV.
+
+None of these touch the schema or executor in ways the v1 design can't
+accommodate. The v1 implementation just needs to keep the predicate and
+threshold-loading code factored cleanly so a second tier can slot in.
+
+### Auto-calibration mode
+
+The v1 calibration loop expects a human to inspect `calibration_report.csv`,
+update `config.yaml`, and re-run. If a second iteration becomes routine,
+consider an `--auto-calibrate` mode that picks thresholds from the
+calibration distributions automatically (e.g., setting each threshold to the
+N-th percentile of the hash-match positive distribution).
+
+No design changes anticipated in v1 to accommodate this.
