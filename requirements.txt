@@ -19,3 +19,6 @@ natsort
 typer
 pyarrow
 intervaltree
+rapidfuzz
+scipy
+scikit-learn
