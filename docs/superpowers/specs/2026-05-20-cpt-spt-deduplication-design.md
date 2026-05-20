@@ -149,8 +149,8 @@ Same scheme for SPT with `(depth_m, ISPT_MAIN, ISPT_NVAL, ISPT_REP)`.
 
 - `GROUP BY hash` over the (cpt_id → hash) mapping → drop singleton buckets.
 - For each multi-`nzgd_id` bucket, add the involved `nzgd_id`s as edges in a
-  graph (union-find).
-- Connected components → record-level clusters.
+  sparse graph.
+- `scipy.sparse.csgraph.connected_components` → record-level clusters.
 
 Transitive matches are handled correctly: if A↔B via report X and A↔D via
 report Y, then `{A, B, D}` forms one cluster.
@@ -228,11 +228,11 @@ next run.
 
 ### Cluster formation, canonical selection
 
-Identical to Pass 1: union-find over the edges where the match predicate
-fires, then the same canonical-selection function. The matched-pair set fed
-into canonical selection is the set of cross-record `(report_id, report_id')`
-pairs whose `trace_score` was the best for their pair of records and which
-fired the predicate.
+Identical to Pass 1: connected-components over the edges where the match
+predicate fires, then the same canonical-selection function. The matched-pair
+set fed into canonical selection is the set of cross-record
+`(report_id, report_id')` pairs whose `trace_score` was the best for their
+pair of records and which fired the predicate.
 
 ### Per-cluster merge ordering
 
@@ -321,32 +321,73 @@ Every run produces, in the same directory as the deduped DB:
 
 ## Testing strategy
 
-`tests/dedup/`:
+The behaviour we care about lives almost entirely in the *composition* of
+well-tested libraries: streaming rows from SQLite, hashing bytes with
+`blake2b`, packing floats with `struct.pack`, querying a `BallTree`, computing
+RMSE with `numpy`, running connected-components on a graph, and computing
+string similarity with `rapidfuzz`. We do **not** test what those libraries
+themselves already guarantee. We test how our code composes them, and that
+the composition produces correct DB state under realistic scenarios.
 
-1. **Unit** — pure functions:
-   - Fingerprint determinism and NaN/NULL canonicalisation.
-   - Canonical selection on mocked clusters (each tiebreaker exercised).
-   - Trace resampling and RMSE computation.
-   - Match-predicate evaluation with sentinel-handling cases.
-   - Union-find correctness.
-2. **Integration** — a small synthetic SQLite DB built in `conftest.py` with
-   deliberately constructed scenarios:
-   - Exact duplicates (hash pass merges them).
-   - Slight perturbations passing fuzzy thresholds (fuzzy pass merges).
-   - Nearby-but-distinct sites (no merge).
-   - 3-way transitive cluster via hash.
-   - Partial-overlap cluster (some reports re-parented, some deleted).
-   - Multi-field metadata conflict (canonical NULL, multiple distinct values
-     from merged records — verify all candidates appear in
-     `metadata_conflicts_json` and that canonical receives one of them, with
-     the choice logged in `metadata_copied_json`).
-   - SPT cluster with `soilmeasurements`/`densitymeasurements` rows — verify
-     deletion ordering.
-   Run script end-to-end; assert against expected `nzgdrecord`, `dedup_audit`,
-   and dependent-table state in the output DB.
-3. **Real-data validation** — manual: run against a copy of the production DB,
-   inspect the first N merges in `dedup_report.csv`, spot-check source files.
-   Used during initial threshold calibration; not a regression test.
+Concretely, the test suite is built around **one integration layer** with a
+synthetic SQLite DB; unit tests are only added for our own logic that is hard
+to exercise via the integration layer.
+
+### Integration tests (primary)
+
+`tests/dedup/conftest.py` defines a small synthetic SQLite DB fixture
+constructed in code (one schema-conformant DB per scenario, or one DB with
+multiple scenarios partitioned by `nzgd_id` ranges — TBD during
+implementation). `tests/dedup/test_dedup_pipeline.py` runs the script
+end-to-end per scenario and asserts against `nzgdrecord`, `dedup_audit`, and
+dependent-table state in the output DB.
+
+Scenarios:
+
+- Exact-duplicate pair → hash pass merges; verify audit row + duplicate
+  reports/measurements deleted; canonical's unique data untouched.
+- Slight-perturbation pair within fuzzy thresholds → fuzzy pass merges.
+- Nearby-but-distinct sites within spatial radius but failing other predicate
+  terms → no merge.
+- 3-way transitive cluster via hash → single cluster, two audit rows sharing
+  `cluster_id`.
+- Partial-overlap cluster → matched reports deleted, unmatched reports
+  re-parented (measurements remain attached via `cpt_id`).
+- Metadata-conflict scenario → canonical receives one of the candidate
+  values; all candidates present in `metadata_conflicts_json`; chosen value
+  logged in `metadata_copied_json`.
+- SPT cluster with `soilmeasurements`, `densitymeasurements`, and
+  `soilmeasurementsoiltype` rows → deletion ordering produces no orphans.
+- Match-predicate sentinel cases (date NULL on one side; name NULL on one
+  side; both NULL on one side) → covered through dedicated fixture pairs in
+  the integration layer rather than via separate unit tests.
+
+### Unit tests (only where integration is awkward)
+
+None initially. The match-predicate sentinel cases above are the obvious
+candidate for unit testing, but they are tractable as integration fixtures
+and adding them at the unit layer would duplicate coverage. If, during
+implementation, a piece of our own logic emerges that has many discrete
+edge cases that bloat the integration suite, lift it into a unit test at
+that point.
+
+### Behaviour we explicitly do **not** test
+
+- `blake2b` determinism (stdlib).
+- `struct.pack('<d', v)` byte output (stdlib).
+- `BallTree` neighbour-query correctness (scikit-learn).
+- Connected-components correctness — we use `scipy.sparse.csgraph.connected_components`
+  rather than rolling our own union-find, so no test (scipy).
+- RMSE / interpolation math (numpy).
+- `rapidfuzz.fuzz.token_set_ratio` outputs (rapidfuzz).
+- SQLite transaction atomicity, FK enforcement (stdlib + SQLite engine).
+- `pandas.to_csv` correctness (pandas).
+
+### Real-data validation
+
+Manual: run against a copy of the production DB, inspect the first N merges
+in `dedup_report.csv`, spot-check source files. Used during initial
+threshold calibration; not a regression test.
 
 ## Config additions
 
@@ -382,8 +423,9 @@ Loaded into `nzgd/constants.py` per the existing project pattern.
 
 ### Existing dependencies used
 
-- `scikit-learn` (BallTree), `numpy`, `pandas`, `hashlib` (stdlib),
-  `struct` (stdlib), `sqlite3` (stdlib), `tqdm`.
+- `scikit-learn` (BallTree), `scipy` (connected-components), `numpy`,
+  `pandas`, `hashlib` (stdlib), `struct` (stdlib), `sqlite3` (stdlib),
+  `tqdm`.
 
 ## Module layout
 
@@ -396,7 +438,7 @@ nzgd/dedup/
     pass2_fuzzy.py        # blocking, feature extraction, predicate, clustering
     selection.py          # canonical selection (shared by both passes)
     executor.py           # merge plan execution + audit logging
-    cluster.py            # union-find utility
+    cluster.py            # edge-list → connected-components helper (wraps scipy)
     reports.py            # CSV/calibration/failures report writing
     schema.py             # new column/table DDL
 
@@ -404,13 +446,8 @@ nzgd/scripts/db/
     deduplicate.py        # CLI entry point: --source --target [--cpt-only|--spt-only]
 
 tests/dedup/
-    conftest.py           # synthetic-DB fixture
-    test_fingerprint.py
-    test_selection.py
-    test_pass1_hash.py
-    test_pass2_fuzzy.py
-    test_executor.py
-    test_end_to_end.py
+    conftest.py             # synthetic-DB fixtures
+    test_dedup_pipeline.py  # end-to-end integration scenarios (one test per scenario)
 ```
 
 ## Open considerations / future work
