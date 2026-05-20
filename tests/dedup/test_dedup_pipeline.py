@@ -197,3 +197,39 @@ def test_predicate_accepts_when_date_or_name_is_null(fresh_db: sqlite3.Connectio
     add_cpt_report(fresh_db, 20, 2, trace_b)
     total_c, total_r = _run_both_passes(fresh_db, CPT_TABLE_CONFIG, _DEFAULT_THRESHOLDS)
     assert (total_c, total_r) == (1, 1)
+
+
+def test_spt_cluster_cascades_dependent_table_deletes(fresh_db: sqlite3.Connection) -> None:
+    trace = [(1.0, 5, 5, 5), (2.0, 7, 7, 7), (3.0, 10, 10, 10)]
+    add_bh_record(fresh_db, 1)
+    add_bh_record(fresh_db, 2)
+    add_spt_report(fresh_db, 100, 1, trace)
+    add_spt_report(fresh_db, 200, 2, trace)
+    # Add dependents on the duplicate (spt_id 200) so we can verify cascade
+    fresh_db.execute("INSERT INTO soilmeasurements (soil_measurement_id, spt_id, top_depth_m, bottom_depth_m) VALUES (1000, 200, 0.0, 1.0)")
+    fresh_db.execute("INSERT INTO soilmeasurements (soil_measurement_id, spt_id, top_depth_m, bottom_depth_m) VALUES (1001, 200, 1.0, 2.0)")
+    fresh_db.execute("INSERT INTO densitymeasurements (density_measurement_id, spt_id, top_depth_m, bottom_depth_m, density_keyword) VALUES (2000, 200, 0.0, 1.0, 'loose')")
+    fresh_db.execute("INSERT INTO soilmeasurementsoiltype (soil_measurement_id, soil_type_id) VALUES (1000, 1), (1000, 2), (1001, 3)")
+    # And one on the canonical to confirm we don't touch it
+    fresh_db.execute("INSERT INTO soilmeasurements (soil_measurement_id, spt_id, top_depth_m, bottom_depth_m) VALUES (1002, 100, 0.0, 1.0)")
+    fresh_db.execute("INSERT INTO soilmeasurementsoiltype (soil_measurement_id, soil_type_id) VALUES (1002, 1)")
+
+    run_id = _start_run(fresh_db)
+    plan = generate_hash_merge_plan(fresh_db, SPT_TABLE_CONFIG)
+    apply_merge_plan(fresh_db, plan, run_id, SPT_TABLE_CONFIG)
+
+    # spt_id 200 and all its dependents are gone
+    assert fresh_db.execute("SELECT COUNT(*) FROM sptreport WHERE spt_id = 200").fetchone()[0] == 0
+    assert fresh_db.execute("SELECT COUNT(*) FROM sptmeasurements WHERE spt_id = 200").fetchone()[0] == 0
+    assert fresh_db.execute("SELECT COUNT(*) FROM soilmeasurements WHERE spt_id = 200").fetchone()[0] == 0
+    assert fresh_db.execute("SELECT COUNT(*) FROM densitymeasurements WHERE spt_id = 200").fetchone()[0] == 0
+    assert fresh_db.execute(
+        "SELECT COUNT(*) FROM soilmeasurementsoiltype WHERE soil_measurement_id IN (1000, 1001)"
+    ).fetchone()[0] == 0
+    # Canonical untouched
+    assert fresh_db.execute("SELECT COUNT(*) FROM soilmeasurements WHERE spt_id = 100").fetchone()[0] == 1
+    assert fresh_db.execute(
+        "SELECT COUNT(*) FROM soilmeasurementsoiltype WHERE soil_measurement_id = 1002"
+    ).fetchone()[0] == 1
+    # Merge recorded with record_type = 'BH'
+    assert fresh_db.execute("SELECT record_type FROM dedup_audit").fetchall() == [("BH",)]
