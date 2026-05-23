@@ -256,17 +256,31 @@ column on the relevant report table:
 
 1. Read canonical's value. If `is_useful_value(value, table, column)`, keep
    it.
-2. Otherwise scan the cluster's other rows in ascending `report_id` order.
-   Take the first useful value as the new canonical value. Log it in
-   `metadata_copied_json`.
+2. Otherwise scan the cluster's other rows in ascending `report_id` order:
+   - If a useful value is found, take the first one as the new canonical
+     value and log it in `metadata_copied_json`.
+   - If **no** useful value is found among any of the cluster's rows
+     (canonical's value isn't useful AND no other row has a useful value
+     either), **leave canonical's value unchanged**. Pass 0 does not NULL
+     out unscrubbed sentinels. The plausibility check is consulted only
+     when picking between competing values during a merge; it is not used
+     to retroactively clean up values that have no useful alternative.
 3. If multiple non-canonical rows have distinct useful values, record all
    candidates in `metadata_conflicts_json`; canonical takes the value from the
    smallest `report_id`.
 4. UPDATE the canonical row with the chosen values in a single statement.
+   Columns where no useful candidate was found are omitted from the UPDATE.
 
 `max_depth_m` and `min_depth_m` are derived from measurements and will agree
 across same-trace rows; the enrichment rule still applies but produces no
 change in practice.
+
+**The same "leave alone if no useful alternative" rule applies to the
+cross-record `_enrich_canonical_metadata` after the helper migration.**
+A canonical record whose `latitude` is, say, `-1.0` (out of NZ range) keeps
+that value if no merged record has a plausible latitude either. Scrubbing
+implausible values across the entire DB (independent of cluster merges) is
+a separate operation not in scope here.
 
 ### Per-cluster execution
 
@@ -376,8 +390,15 @@ Append scenarios to the existing `tests/dedup/test_dedup_pipeline.py`:
     record's `latitude = -41.0` (plausible). Verify: canonical updated to
     -41.0; audit logs the change. Confirms the cross-record `_enrich`
     function uses the new plausibility helper.
+13. **Sentinel preserved when no useful alternative exists** — cluster of 2
+    cptreport rows: canonical has `extracted_gwl_m = 0` (out of the
+    `[0.01, 50.0]` range); absorbed row also has `extracted_gwl_m = 0`.
+    Verify: canonical's `extracted_gwl_m` remains 0 after Pass 0 runs (not
+    changed to NULL); `metadata_copied_json` contains no entry for
+    `extracted_gwl_m`. Confirms Pass 0 does not retroactively clean up
+    values that have no useful alternative.
 
-Twelve new scenarios. Total test file goes from 10 → 22 tests. Estimated
+Thirteen new scenarios. Total test file goes from 10 → 23 tests. Estimated
 runtime: ~6 seconds.
 
 ### Behaviour we explicitly do **not** test
