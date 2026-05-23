@@ -483,6 +483,9 @@ nzgd/extract/cpt/
 nzgd/scripts/db/
     put_cpts_in_db.py                    # simplified: insert all (file, sheet) rows uniformly
 
+nzgd/db/
+    orm.py                               # remove cpt_data_duplicate_of_cpt_id field from cptreport model
+
 tests/dedup/
     conftest.py                          # unchanged
     test_dedup_pipeline.py               # +12 scenarios
@@ -516,6 +519,15 @@ The plan must include explicit steps for each:
     measurement rows.
   - Stop populating `cpt_data_duplicate_of_cpt_id` (column won't exist after
     migration).
+
+- **ORM schema definition** (`nzgd/db/orm.py`):
+  - Remove the `cpt_data_duplicate_of_cpt_id = IntegerField(null=True)` line
+    from the cptreport model (currently at `nzgd/db/orm.py:375`). The ORM is
+    used by the "create new empty DB" script (`create_empty_db_and_fill_support_tables.py`),
+    so the column must also be absent from new DBs created by that path —
+    otherwise the migration in `nzgd/dedup/schema.py` would have nothing to
+    drop on fresh DBs and the cptreport schema would diverge between
+    fresh-built and migrated DBs.
 
 - **Grep for legacy column readers**: any analysis script or query reading
   `cpt_data_duplicate_of_cpt_id` must have the read removed or replaced. Plan
