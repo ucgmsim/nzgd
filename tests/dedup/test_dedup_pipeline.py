@@ -547,6 +547,31 @@ def test_pass0_sentinel_preserved_when_no_useful_alternative(fresh_db: sqlite3.C
         assert "extracted_gwl_m" not in json.loads(copied)
 
 
+def test_pass0_spt_with_all_nan_depths_does_not_crash(fresh_db: sqlite3.Connection) -> None:
+    """Real-data SPT depths can be non-numeric (coerced to NaN); fuzzy path must not crash."""
+    from nzgd.dedup.pass0_within_record import (
+        apply_within_record_consolidation_plan,
+        generate_within_record_consolidation_plan,
+    )
+    add_bh_record(fresh_db, nzgd_id=1, lat=-41.0, lon=174.0)
+    add_spt_report(fresh_db, spt_id=100, nzgd_id=1, trace=[], source_file="X.ags_sheet_0")
+    add_spt_report(fresh_db, spt_id=101, nzgd_id=1, trace=[], source_file="X.ags_sheet_H")
+    # Insert NaN-depth rows directly (bypass the trace helper that requires float tuples)
+    fresh_db.execute(
+        "INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL, ISPT_REP) "
+        "VALUES (?, ?, ?, ?, ?)", (100, "garbage", 5, 5, "1/2/3,")
+    )
+    fresh_db.execute(
+        "INSERT INTO sptmeasurements (spt_id, depth_m, ISPT_MAIN, ISPT_NVAL, ISPT_REP) "
+        "VALUES (?, ?, ?, ?, ?)", (101, "garbage", 7, 7, "2/3/4,")
+    )
+    run_id = _start_run(fresh_db)
+    thresholds = {"trace_score_max": 0.05, "trace_resample_step_m": 0.05}
+    # Must not raise
+    plan = generate_within_record_consolidation_plan(fresh_db, SPT_TABLE_CONFIG, thresholds)
+    apply_within_record_consolidation_plan(fresh_db, plan, run_id, SPT_TABLE_CONFIG)
+
+
 def test_pass0_singleton_independent_stem_not_absorbed_into_matching_pair(fresh_db: sqlite3.Connection) -> None:
     """Regression: idx=1 singleton stem must not collide with 1-based component label 1.
 

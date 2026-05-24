@@ -58,7 +58,7 @@ def trace_score(a: np.ndarray, b: np.ndarray, step: float) -> float:
         return math.inf
     lo = max(a[:, 0].min(), b[:, 0].min())
     hi = min(a[:, 0].max(), b[:, 0].max())
-    if hi <= lo:
+    if math.isnan(lo) or math.isnan(hi) or hi <= lo:
         return math.inf
     grid = np.arange(lo, hi + step / 2, step)
     if grid.size < 2:
