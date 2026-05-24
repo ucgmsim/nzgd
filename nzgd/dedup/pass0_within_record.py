@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import combinations
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 from tqdm import tqdm
@@ -23,7 +23,6 @@ from nzgd.dedup import executor
 from nzgd.dedup.canonical_selectors import (
     CanonicalSelector,
     ClusterRow,
-    default_within_record_canonical,
 )
 from nzgd.dedup.cluster import connected_components_from_edges
 from nzgd.dedup.data_types import TableConfig
@@ -172,8 +171,8 @@ def _build_clusters_for_nzgd(
     nzgd_id: int,
     table_cfg: TableConfig,
     thresholds: dict,
-) -> tuple[list[list[int]], dict[int, str], dict[int, int]]:
-    """Return (clusters, source_file_by_id, measurement_count_by_id) for an nzgd_id."""
+) -> tuple[list[list[int]], dict[int, str], dict[int, int], dict[int, np.ndarray]]:
+    """Return (clusters, source_file_by_id, measurement_count_by_id, traces) for an nzgd_id."""
     cur = conn.cursor()
     cur.execute(
         f"SELECT r.{table_cfg.report_id_column}, r.source_file, "
@@ -185,7 +184,7 @@ def _build_clusters_for_nzgd(
     )
     rows = cur.fetchall()
     if not rows:
-        return [], {}, {}
+        return [], {}, {}, {}
 
     source_file_by_id = {r[0]: r[1] for r in rows}
     measurement_count_by_id = {r[0]: r[2] for r in rows}
@@ -246,7 +245,7 @@ def _build_clusters_for_nzgd(
         comp = node_to_component.get(idx, idx)  # singletons keyed by their own index
         components[comp].extend(node)
 
-    return [sorted(rep_ids) for rep_ids in components.values()], source_file_by_id, measurement_count_by_id
+    return [sorted(rep_ids) for rep_ids in components.values()], source_file_by_id, measurement_count_by_id, traces
 
 
 def _classify_match(
@@ -310,7 +309,7 @@ def generate_within_record_consolidation_plan(
     plans: list[WithinRecordConsolidation] = []
     next_cluster_id = 1
     for nzgd_id in tqdm(nzgd_ids, desc=f"within-record {table_cfg.record_type}"):
-        clusters, source_file_by_id, measurement_count_by_id = _build_clusters_for_nzgd(
+        clusters, source_file_by_id, measurement_count_by_id, traces = _build_clusters_for_nzgd(
             conn, nzgd_id, table_cfg, thresholds,
         )
         for cluster_report_ids in clusters:
@@ -326,7 +325,6 @@ def generate_within_record_consolidation_plan(
                 for rid in cluster_report_ids
             ]
             canonical_id = canonical_selector(cluster_rows, table_cfg)
-            traces = load_traces(conn, nzgd_id, table_cfg)
             has_data_by_id = {rid: measurement_count_by_id[rid] > 0 for rid in cluster_report_ids}
             absorbed = []
             for rid in cluster_report_ids:
