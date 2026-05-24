@@ -135,7 +135,6 @@ class SheetExtractionResult:
     extraction: ExtractedDataAndColInfo | pd.DataFrame
     file_path: Path = Path()
     sheet_name: str = "0"
-    removed_duplicates: list | str | None = None
     explicit_unit_conversions: str | None = None
     inferred_unit_conversions: str | None = None
 

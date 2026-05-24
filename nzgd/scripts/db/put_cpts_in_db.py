@@ -41,7 +41,6 @@ def serialize_cpt_reports(
         max_depth = None
         min_depth = None
         has_cpt_data = 0
-        cpt_data_duplicate_of_cpt_id = None
         did_explicit_unit_conversion = 0
         did_inferred_unit_conversion = 0
 
@@ -96,36 +95,15 @@ def serialize_cpt_reports(
                 ):
                     did_inferred_unit_conversion = 1
 
-            else:
-                removed_duplicates = cpt_data_df["removed_duplicates"].unique()
-                if len(removed_duplicates) > 0:
-                    removed_duplicates_str = removed_duplicates[0]
-                    if (removed_duplicates_str is not None) and (
-                        f"{source_file_name}_AND_{source_sheet_name}"
-                        in removed_duplicates_str
-                    ):
-                        max_depth = cpt_data_df["Depth"].max()
-                        min_depth = cpt_data_df["Depth"].min()
-
-                        file_name_of_cpt_data = cpt_data_df["file_name"].unique()[0]
-                        sheet_name_of_cpt_data = cpt_data_df["sheet_name"].unique()[0]
-
-                        cpt_data_duplicate_of_cpt_id = int(
-                            cpt_id_df[
-                                cpt_id_df["nzgd_id_AND_filename_AND_sheetname"]
-                                == f"{cpt_id_df_row['nzgd_id']}_AND_{file_name_of_cpt_data}_AND_{sheet_name_of_cpt_data}"
-                            ]["cpt_id"].iloc[0],
-                        )
-
         # Insert into cptreport
         cursor.execute(
             """
             INSERT OR REPLACE INTO cptreport (
                 cpt_id, nzgd_id, max_depth_m, min_depth_m, extracted_gwl_m, gwl_method_id,
-                tip_net_area_ratio, predrill_depth_m, termination_reason_id, has_cpt_data, cpt_data_duplicate_of_cpt_id,
+                tip_net_area_ratio, predrill_depth_m, termination_reason_id, has_cpt_data,
                 did_explicit_unit_conversion, did_inferred_unit_conversion, source_file
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cpt_id_df_row["cpt_id"],
@@ -138,7 +116,6 @@ def serialize_cpt_reports(
                 cpt_id_df_row["predrill_depth"],
                 termination_reason_id,
                 has_cpt_data,
-                cpt_data_duplicate_of_cpt_id,
                 did_explicit_unit_conversion,
                 did_inferred_unit_conversion,
                 f"{source_file_name}_sheet_{source_sheet_name}",
