@@ -372,9 +372,6 @@ class CPTReport(BaseModel):
     has_cpt_data = IntegerField()
     """int: A Boolean representing whether the CPT report has associated CPT data."""
 
-    cpt_data_duplicate_of_cpt_id = IntegerField(null=True)
-    """int: The cpt_id of the CPT report that this CPT data is a duplicate of."""
-
     did_explicit_unit_conversion = IntegerField(null=True)
     """int: A Boolean representing whether an explicit unit conversion was applied."""
 
