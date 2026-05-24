@@ -308,34 +308,26 @@ def _run_pass0(conn: sqlite3.Connection, cfg) -> tuple[int, int]:
 
 
 def test_pass0_typical_multi_sheet_collapse(fresh_db: sqlite3.Connection) -> None:
-    """5 cptreport rows from 2 stems collapse independently per-stem.
-
-    The AGS stem (11533, 11534) has no data-bearing rows and collapses to 1.
-    The xlsx stem (11535, 11536, 11537) has one data-bearing row (11536) and
-    collapses to 1. Stems without data-bearing rows cannot be cross-linked, so
-    the result is 2 clusters (one per stem) absorbing 3 rows total and leaving
-    2 surviving rows.
-    """
+    """5 cptreport rows from 2 stems; both stems have a data-bearing row with the
+    same trace → stems link via hash → all 5 rows collapse into 1 surviving row."""
     trace = [(0.1, 1.0, 0.01, 0.0), (0.2, 1.1, 0.011, 0.0), (0.3, 1.2, 0.012, 0.0)]
     add_cpt_record(fresh_db, nzgd_id=8920, lat=-43.54, lon=172.66)
     add_cpt_report(fresh_db, cpt_id=11533, nzgd_id=8920, trace=[],    source_file="CPT_8920_AGS01.ags_sheet_0")
-    add_cpt_report(fresh_db, cpt_id=11534, nzgd_id=8920, trace=[],    source_file="CPT_8920_AGS01.ags_sheet_Data")
+    add_cpt_report(fresh_db, cpt_id=11534, nzgd_id=8920, trace=trace, source_file="CPT_8920_AGS01.ags_sheet_Data")
     add_cpt_report(fresh_db, cpt_id=11535, nzgd_id=8920, trace=[],    source_file="CPT_8920_Raw01.xlsx_sheet_0")
     add_cpt_report(fresh_db, cpt_id=11536, nzgd_id=8920, trace=trace, source_file="CPT_8920_Raw01.xlsx_sheet_Data")
     add_cpt_report(fresh_db, cpt_id=11537, nzgd_id=8920, trace=[],    source_file="CPT_8920_Raw01.xlsx_sheet_Header")
 
     n_clusters, n_records = _run_pass0(fresh_db, CPT_TABLE_CONFIG)
-    assert (n_clusters, n_records) == (2, 3)
+    assert (n_clusters, n_records) == (1, 4)
+    # Canonical: smallest cpt_id with has_data=True → 11534
     remaining = [r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport ORDER BY cpt_id")]
-    assert remaining == [11533, 11536]
+    assert remaining == [11534]
     audit = fresh_db.execute(
         "SELECT canonical_nzgd_id, merged_nzgd_id, match_pass, report_pairs_json FROM dedup_audit"
     ).fetchall()
-    assert len(audit) == 2
-    assert all(a[0] == 8920 and a[1] == 8920 and a[2] == "within_record" for a in audit)
-    all_absorbed_ids = {
-        entry["absorbed_report_id"]
-        for row in audit
-        for entry in json.loads(row[3])
-    }
-    assert all_absorbed_ids == {11534, 11535, 11537}
+    assert len(audit) == 1
+    assert audit[0][0] == 8920 and audit[0][1] == 8920 and audit[0][2] == "within_record"
+    absorbed = json.loads(audit[0][3])
+    assert len(absorbed) == 4
+    assert {a["absorbed_report_id"] for a in absorbed} == {11533, 11535, 11536, 11537}
