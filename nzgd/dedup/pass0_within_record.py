@@ -242,7 +242,7 @@ def _build_clusters_for_nzgd(
 
     components: dict[int, list[int]] = defaultdict(list)
     for idx, node in enumerate(stem_nodes):
-        comp = node_to_component.get(idx, idx)  # singletons keyed by their own index
+        comp = node_to_component.get(idx, -(idx + 1))  # singletons get unique negative keys to avoid collision with 1-based component labels
         components[comp].extend(node)
 
     return [sorted(rep_ids) for rep_ids in components.values()], source_file_by_id, measurement_count_by_id, traces
@@ -429,9 +429,10 @@ def apply_within_record_consolidation_plan(
                 )
 
             # Delete each absorbed row + its dependents via the cross-record executor helper
+            cluster_absorbed = 0
             for absorbed in consolidation.absorbed_reports:
                 executor.delete_report(conn, absorbed.absorbed_report_id, table_cfg)
-                n_records_absorbed += 1
+                cluster_absorbed += 1
 
             # Audit row
             pairs_json = json.dumps([
@@ -463,6 +464,7 @@ def apply_within_record_consolidation_plan(
 
             cur.execute(f"RELEASE SAVEPOINT {savepoint}")
             n_clusters_ok += 1
+            n_records_absorbed += cluster_absorbed
         except Exception as exc:
             cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             cur.execute(f"RELEASE SAVEPOINT {savepoint}")

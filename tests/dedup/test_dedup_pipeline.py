@@ -545,3 +545,26 @@ def test_pass0_sentinel_preserved_when_no_useful_alternative(fresh_db: sqlite3.C
     copied = fresh_db.execute("SELECT metadata_copied_json FROM dedup_audit").fetchone()[0]
     if copied:
         assert "extracted_gwl_m" not in json.loads(copied)
+
+
+def test_pass0_singleton_independent_stem_not_absorbed_into_matching_pair(fresh_db: sqlite3.Connection) -> None:
+    """Regression: idx=1 singleton stem must not collide with 1-based component label 1.
+
+    Three stems for one nzgd_id, in insertion order: A.xlsx (data, trace T at idx=0),
+    B.ags (no data, independent, idx=1), C.xlsx (data, same trace T, idx=2). The
+    cross-stem edge (0, 2) creates component {0:1, 2:1}. A buggy fallback that uses
+    idx as the key for singletons would map idx=1 to label 1, incorrectly absorbing
+    B.ags's no-data report.
+    """
+    trace = [(0.1, 1.0, 0.01, 0.0), (0.2, 1.1, 0.011, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=1, lat=-41.0, lon=174.0)
+    add_cpt_report(fresh_db, cpt_id=10, nzgd_id=1, trace=trace, source_file="A.xlsx_sheet_Data")
+    # The middle stem (B.ags) is an INDEPENDENT no-data row
+    add_cpt_report(fresh_db, cpt_id=20, nzgd_id=1, trace=[], source_file="B.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=30, nzgd_id=1, trace=trace, source_file="C.xlsx_sheet_Data")
+    n_clusters, n_records = _run_pass0(fresh_db, CPT_TABLE_CONFIG)
+    # Cluster 1: stems A and C link via matching data; canonical = 10 (smallest data-bearing id), absorbs 30. 1 record absorbed.
+    # Cluster 2: stem B is a singleton with 1 row → no consolidation needed (only triggers when len(cluster) > 1).
+    assert (n_clusters, n_records) == (1, 1)
+    remaining = sorted(r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport"))
+    assert remaining == [10, 20]  # B.ags's row (20) survives
