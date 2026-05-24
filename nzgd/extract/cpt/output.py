@@ -47,17 +47,6 @@ def write_extracted_data(
                 "sheet_name",
             ] = extraction_result.sheet_name
 
-            # concatenate the list of removed duplicates into a single string
-            if extraction_result.removed_duplicates:
-                extraction_result.removed_duplicates = "___".join(
-                    extraction_result.removed_duplicates,
-                )
-
-            extractions[extraction_result_index].extraction.data_df.loc[
-                :,
-                "removed_duplicates",
-            ] = extraction_result.removed_duplicates
-
             extractions[extraction_result_index].extraction.data_df.loc[
                 :,
                 "explicit_unit_conversions",

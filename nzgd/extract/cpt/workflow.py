@@ -62,8 +62,4 @@ def process_one_record(
         validated_extractions,
     )
 
-    extractions_no_duplicates = conditioning.remove_duplicate_extractions(
-        conditioned_extractions,
-    )
-
-    output.write_extracted_data(extractions_no_duplicates)
+    output.write_extracted_data(conditioned_extractions)
