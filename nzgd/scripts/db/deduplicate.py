@@ -17,6 +17,10 @@ import typer
 from nzgd import constants
 from nzgd.dedup.data_types import CPT_TABLE_CONFIG, SPT_TABLE_CONFIG
 from nzgd.dedup.executor import apply_merge_plan
+from nzgd.dedup.pass0_within_record import (
+    apply_within_record_consolidation_plan,
+    generate_within_record_consolidation_plan,
+)
 from nzgd.dedup.pass1_hash import generate_hash_merge_plan
 from nzgd.dedup.pass2_fuzzy import generate_fuzzy_merge_plan
 from nzgd.dedup.reports import (
@@ -88,6 +92,16 @@ def main(
         if skip:
             typer.echo(f"Skipping {cfg.record_type} per CLI flag.")
             continue
+        typer.echo(f"[{cfg.record_type}] Pass 0: within-record consolidation ...")
+        pass0_thresholds = {
+            "trace_score_max": constants.DEDUP_CONFIG["fuzzy_pass"]["trace_score_max"],
+            "trace_resample_step_m": constants.DEDUP_CONFIG["fuzzy_pass"]["trace_resample_step_m"],
+        }
+        within_plan = generate_within_record_consolidation_plan(conn, cfg, pass0_thresholds)
+        c0, r0 = apply_within_record_consolidation_plan(
+            conn, within_plan, run_id, cfg, failures=all_failures,
+        )
+        typer.echo(f"[{cfg.record_type}] Pass 0: absorbed {r0} rows across {c0} clusters.")
         typer.echo(f"[{cfg.record_type}] Pass 1: hash ...")
         hash_plan = generate_hash_merge_plan(conn, cfg)
         c1, r1 = apply_merge_plan(conn, hash_plan, run_id, cfg, failures=all_failures)
@@ -104,8 +118,8 @@ def main(
             cal_path = out_dir / f"{cfg.record_type.lower()}_{constants.DEDUP_CONFIG['output']['calibration_report_filename']}"
             write_calibration_report(calibration.get("positive", []), calibration.get("negative", []), cal_path)
 
-        total_clusters += c1 + c2
-        total_records += r1 + r2
+        total_clusters += c0 + c1 + c2
+        total_records += r0 + r1 + r2
 
     finished = datetime.now(timezone.utc).isoformat()
     conn.execute(
