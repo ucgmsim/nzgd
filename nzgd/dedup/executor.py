@@ -8,6 +8,7 @@ from typing import Iterable
 from tqdm import tqdm
 
 from nzgd.dedup.data_types import MergePlanEntry, TableConfig
+from nzgd.dedup.plausibility import is_useful_value
 
 
 _NZGDRECORD_METADATA_COLUMNS = (
@@ -48,23 +49,25 @@ def _enrich_canonical_metadata(
     conflicts: dict[str, list[dict]] = {}
     updates: dict[str, object] = {}
     for col in _NZGDRECORD_METADATA_COLUMNS:
-        if canon_vals[col] is not None:
-            continue  # canonical wins
-        candidates = merged_vals[col]
-        if not candidates:
-            continue  # nothing to copy
-        distinct = {c[0] for c in candidates}
+        if is_useful_value(canon_vals[col], "nzgdrecord", col):
+            continue  # canonical's useful value wins
+        useful_candidates = [
+            (v, nz) for v, nz in merged_vals[col]
+            if is_useful_value(v, "nzgdrecord", col)
+        ]
+        if not useful_candidates:
+            continue  # nothing useful to copy; leave canonical's value (NULL or sentinel) alone
+        distinct = {v for v, _ in useful_candidates}
         if len(distinct) == 1:
-            chosen = candidates[0]
+            chosen = useful_candidates[0]
             updates[col] = chosen[0]
             copied[col] = {"value": chosen[0], "source_nzgd_id": chosen[1]}
         else:
-            # Multiple distinct values; pick the one from the smallest merged nzgd_id.
-            chosen = min(candidates, key=lambda c: c[1])
+            chosen = min(useful_candidates, key=lambda c: c[1])
             updates[col] = chosen[0]
             copied[col] = {"value": chosen[0], "source_nzgd_id": chosen[1]}
             conflicts[col] = [
-                {"value": v, "source_nzgd_id": nz} for v, nz in candidates
+                {"value": v, "source_nzgd_id": nz} for v, nz in useful_candidates
             ]
 
     if updates:
@@ -76,7 +79,7 @@ def _enrich_canonical_metadata(
     return copied, conflicts
 
 
-def _delete_report(
+def delete_report(
     conn: sqlite3.Connection, report_id: int, table_cfg: TableConfig
 ) -> None:
     """Delete a report row and all its dependent rows in the spec-mandated order."""
@@ -144,7 +147,7 @@ def apply_merge_plan(
             copied, conflicts = _enrich_canonical_metadata(conn, canonical, merged_ids)
             for entry in entries:
                 for pair in entry.matched_pairs:
-                    _delete_report(conn, pair.merged_report_id, table_cfg)
+                    delete_report(conn, pair.merged_report_id, table_cfg)
                 for rid in entry.unique_merged_report_ids:
                     _reparent_report(conn, rid, canonical, table_cfg)
                 cur.execute(
