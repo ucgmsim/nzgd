@@ -40,7 +40,6 @@ CREATE TABLE cptreport (
     predrill_depth_m REAL,
     termination_reason_id INTEGER,
     has_cpt_data INTEGER NOT NULL DEFAULT 1,
-    cpt_data_duplicate_of_cpt_id INTEGER,
     did_explicit_unit_conversion INTEGER,
     did_inferred_unit_conversion INTEGER,
     source_file TEXT NOT NULL DEFAULT 'synthetic.xls'
