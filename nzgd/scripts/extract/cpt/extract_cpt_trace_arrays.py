@@ -28,14 +28,11 @@ if __name__ == "__main__":
 
     NUM_WORKERS = os.cpu_count()
     # NUM_WORKERS = 1
-    results = []
 
+    # Discard each return value as it arrives; process_one_record returns None.
     with mp.Pool(processes=NUM_WORKERS) as pool:
-        results.extend(
-            list(
-                tqdm(
-                    pool.imap(workflow.process_one_record, cpt_paths),
-                    total=len(cpt_paths),
-                ),
-            ),
-        )
+        for _ in tqdm(
+            pool.imap(workflow.process_one_record, cpt_paths),
+            total=len(cpt_paths),
+        ):
+            pass

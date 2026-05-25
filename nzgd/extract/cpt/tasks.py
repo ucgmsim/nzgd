@@ -1,4 +1,3 @@
-import copy
 import re
 import zipfile
 from collections.abc import Callable
@@ -37,8 +36,6 @@ def apply_func_to_all_sheets(
         The list of SheetExtractionResult objects after applying the function.
 
     """
-    modified_sheet_extractions = copy.copy(sheet_extraction_results)
-
     for idx, sheet_extraction in enumerate(sheet_extraction_results):
         # If this item is not the result of a successful extraction,
         # just continue with the next item in the list
@@ -48,9 +45,9 @@ def apply_func_to_all_sheets(
         ):
             continue
 
-        modified_sheet_extractions[idx] = func(sheet_extraction)
+        sheet_extraction_results[idx] = func(sheet_extraction)
 
-    return modified_sheet_extractions
+    return sheet_extraction_results
 
 
 def enforce_positive_depth_for_sheet(
@@ -125,36 +122,36 @@ def explicit_unit_conversions_in_sheet(
         col_info[0].matched_string for col_info in sheet_extraction.extraction.col_info
     ]
 
-    converted_units_data_df = sheet_extraction.extraction.data_df.copy()
+    data_df = sheet_extraction.extraction.data_df
 
-    placeholder_mask = converted_units_data_df.isin(
+    placeholder_mask = data_df.isin(
         constants.KNOWN_MISSING_VALUE_PLACEHOLDERS,
     )
+
+    # Save placeholder values so they can be restored after numeric operations.
+    original_placeholder_values = data_df[placeholder_mask]
 
     for col_index, col_name in enumerate(col_names):
         if col_name is not None:
             if col_index == 0:
                 # checking the depth column
                 if "cm" in col_name.lower():
-                    converted_units_data_df.loc[:, col_name] /= 100.0
+                    data_df.loc[:, col_name] /= 100.0
                     explicit_unit_conversions.append(
                         f"{col_name} was converted from cm to m",
                     )
 
             # checking the other columns
             elif "kpa" in col_name.lower():
-                converted_units_data_df.loc[:, col_name] /= 1000.0
+                data_df.loc[:, col_name] /= 1000.0
                 explicit_unit_conversions.append(
                     f"{col_name} was converted from kPa to MPa",
                 )
 
-    # Where placeholder_mask is True, replace with original values
-    converted_units_data_df = converted_units_data_df.mask(
-        placeholder_mask,
-        sheet_extraction.extraction.data_df,
-    )
+    # Restore original placeholder values in place
+    data_df[placeholder_mask] = original_placeholder_values
 
-    sheet_extraction.extraction.data_df = converted_units_data_df
+    sheet_extraction.extraction.data_df = data_df
     sheet_extraction.explicit_unit_conversions = "_AND_".join(explicit_unit_conversions)
 
     return sheet_extraction
@@ -257,16 +254,14 @@ def convert_numerical_str_cells_to_float(
     if isinstance(iterable, pd.DataFrame):
         iterable = [iterable.iloc[i].to_list() for i in range(len(iterable))]
 
-    iterable_no_numerical_str = copy.copy(iterable)
-
-    for row_idx, line in enumerate(iterable_no_numerical_str):
-        for col_idx, cell in enumerate(line):
+    return [
+        [
             ## some cells are read by pd.read_xls() as type datetime so they need to be converted to str
-            cell = str(cell)
-            if info.can_convert_str_to_float(cell):
-                iterable_no_numerical_str[row_idx][col_idx] = float(cell)
-
-    return iterable_no_numerical_str
+            float(str(cell)) if info.can_convert_str_to_float(str(cell)) else cell
+            for cell in row
+        ]
+        for row in iterable
+    ]
 
 
 def excel_skip_nondata_rows_at_start(
@@ -338,12 +333,11 @@ def combine_multiple_header_rows(
     ## which is the lowest row in the spreadsheet
     header_row_index = np.max(header_row_indices)
 
-    ## copy the column names from the rows above the lowest header row
-    loaded_data_df_with_combined_header_rows = loaded_data_df.copy()
+    ## Combine header cell text from rows above the lowest header row into that row.
     for row_idx in header_row_indices:
         for col_idx in range(loaded_data_df.shape[1]):
             if row_idx != header_row_index:
-                loaded_data_df_with_combined_header_rows.iloc[
+                loaded_data_df.iloc[
                     header_row_index,
                     col_idx,
                 ] = (
@@ -352,7 +346,7 @@ def combine_multiple_header_rows(
                     + str(loaded_data_df.iloc[row_idx, col_idx])
                 )
 
-    return loaded_data_df_with_combined_header_rows, header_row_index
+    return loaded_data_df, header_row_index
 
 
 def infer_unit_conversions_for_sheet(
@@ -380,15 +374,16 @@ def infer_unit_conversions_for_sheet(
     ):
         return sheet_extraction
 
-    converted_units_data_df = sheet_extraction.extraction.data_df.copy()
+    data_df = sheet_extraction.extraction.data_df
 
-    placeholder_mask = sheet_extraction.extraction.data_df.isin(
+    placeholder_mask = data_df.isin(
         constants.KNOWN_MISSING_VALUE_PLACEHOLDERS,
     )
 
-    # Remove placeholder values before wrong units are inferred as the placeholder
-    # values have large magnitudes that could skew the results
-    converted_units_data_df = converted_units_data_df.infer_objects(copy=False).replace(
+    # Save placeholder values so they can be restored after numeric operations.
+    original_placeholder_values = data_df[placeholder_mask]
+
+    converted_units_data_df = data_df.infer_objects(copy=False).replace(
         constants.KNOWN_MISSING_VALUE_PLACEHOLDERS,
         np.nan,
     )
@@ -543,11 +538,8 @@ def infer_unit_conversions_for_sheet(
             f"{list(constants.COLUMN_DESCRIPTIONS)[3]} was converted from kPa to MPa",
         )
 
-    # restore the original placeholder values (where placeholder_mask is True)
-    converted_units_data_df = converted_units_data_df.mask(
-        placeholder_mask,
-        sheet_extraction.extraction.data_df,
-    )
+    # Restore original placeholder values in place
+    converted_units_data_df[placeholder_mask] = original_placeholder_values
 
     sheet_extraction.extraction.data_df = converted_units_data_df
     sheet_extraction.inferred_unit_conversions = "_AND_".join(
@@ -694,9 +686,8 @@ def make_column_names_unique(df: pd.DataFrame) -> pd.DataFrame:
             seen[col] = 1
             new_columns.append(col)
 
-    df_copy = df.copy()
-    df_copy.columns = new_columns
-    return df_copy
+    df.columns = new_columns
+    return df
 
 
 def identify_cols_to_avoid_if_possible(
@@ -808,9 +799,10 @@ def get_xls_sheet_names(
     else:
         engine = constants.ExcelEngine.openpyxl
 
-    # Some .xls files are actually xlsx files and need to be opened with openpyxl
+    # Some .xls files are actually xlsx files and need to be opened with openpyxl.
     try:
-        sheet_names = pd.ExcelFile(file_path, engine=engine).sheet_names
+        with pd.ExcelFile(file_path, engine=engine) as xf:
+            sheet_names = xf.sheet_names
         return sheet_names, engine
 
     except (xlrd.biffh.XLRDError, TypeError):
@@ -821,7 +813,8 @@ def get_xls_sheet_names(
 
         engine = other_engine
         try:
-            sheet_names = pd.ExcelFile(file_path, engine=engine).sheet_names
+            with pd.ExcelFile(file_path, engine=engine) as xf:
+                sheet_names = xf.sheet_names
         except:
             error_message = (
                 f"invalid_excel_file - file {file_path.name} is not a "

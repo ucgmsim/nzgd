@@ -177,7 +177,7 @@ def extract_sheets_in_file(
         # in the same way as the extractions from a normal XLS/XLSX file that has
         # several sheets
         try:
-            sheet_names, _ = tasks.get_xls_sheet_names(file_path)
+            sheet_names, engine = tasks.get_xls_sheet_names(file_path)
 
         except errors.InvalidExcelFileError as e:
             return [
@@ -192,7 +192,6 @@ def extract_sheets_in_file(
             ]
 
         # Attempt to extract every sheet in the XLS/XLSX file
-        _, engine = tasks.get_xls_sheet_names(file_path)
         return [
             tasks.load_excel_sheet(
                 file_path,
