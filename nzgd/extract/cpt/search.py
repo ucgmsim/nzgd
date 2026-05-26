@@ -635,6 +635,14 @@ def find_all_candidate_header_rows(
             first_data_row = i
             break
 
+    # If no numerical data block exists, this sheet cannot contain CPT data
+    # (depth/qc/fs/u are all numeric). Returning an empty list short-circuits
+    # the combinatorial scoring step: an all-text sheet (e.g. a 2000-row
+    # dictionary sheet) would otherwise produce thousands of "candidate"
+    # header rows and explode memory in find_best_header_combination.
+    if first_data_row == len(cleaned_lines):
+        return []
+
     # Collect rows with text surplus > 0 near the data block. We search
     # backwards from the first data row to find the contiguous block of
     # text-heavy rows immediately above the data (the actual header region).
