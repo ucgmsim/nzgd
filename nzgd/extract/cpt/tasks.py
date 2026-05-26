@@ -1068,6 +1068,11 @@ def load_excel_sheet(
         parse_dates=False,
     )
 
+    # Drop all-NaN columns. Some Excel files report a huge "used range"
+    # (e.g. 12,304 columns) where almost every column is empty. Without this,
+    # downstream copies of the wide DataFrame blow up time and memory.
+    extracted_data_df = extracted_data_df.dropna(axis=1, how="all")
+
     # Check that the DataFrame contains data
     if extracted_data_df.empty:
         return data_structures.SheetExtractionResult(
