@@ -85,7 +85,10 @@ def assign():
         DataFrame with assigned CPT IDs and merged supplemental values.
     """
 
-    print("Assigning CPT IDs Part 1 of 2: Identifying unique CPT trace extractions...")
+    print(
+        "Assigning CPT IDs Part 1 of 2: summarizing extraction source keys "
+        "(not deduplicating CPT trace content)..."
+    )
     extracted_cpt_trace_summary_df = extracted_cpt_trace_summary()
     if not extracted_cpt_trace_summary_df.empty:
         order = index_natsorted(extracted_cpt_trace_summary_df["nzgd_id"].astype(str))
@@ -141,9 +144,8 @@ def assign():
         & merged_df["nzgd_id_extracted"].isna()
     )
 
-    # These ones do not have corresponding CPT extractions that we should be consistent with
-    # so we can just drop duplicates but keep the first one, although there don't seem
-    # to be any duplicates to drop
+    # Collapse only duplicate rows that arise in the supplemental/key merge phase.
+    # This does not perform content-level deduplication of CPT trace records.
     merged_df_single_values_no_corresponding_cpt_extraction = merged_df[
         no_corresponding_cpt_extraction_indices
     ].drop_duplicates(
