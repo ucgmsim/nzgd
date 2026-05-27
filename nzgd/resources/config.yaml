@@ -41,7 +41,7 @@ nzgd_source_data_dir: "/home/arr65/data/nzgd/downloads/nzgd_source_files"
 
 # Paths to groundwater level model GeoTIFF files
 westerhoff_2018_model_path: "/home/arr65/data/nzgd/resources/national_water_table_model_data_2022/nwt_wtd_NZ_20220825.tif"
-nlm_gwd_path: "/home/arr65/data/national_liquefaction_model/NLM files/v2025.0_rc4/GW/NLM_gwd.tif"
+nlm_gwd_path: "/home/arr65/data/national_liquefaction_model/NLM_files/v2025.0_rc4/GW/NLM_gwd.tif"
 nlm_gw_std_path: "/home/arr65/data/national_liquefaction_model/NLM files/v2025.0_rc4/GW/NLM_gw_std_wo_seasonal.tif"
 
 # Path to Foster et al. (2019) Vs30 model GeoTIFF file
