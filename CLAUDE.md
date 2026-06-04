@@ -100,3 +100,5 @@ Key sections:
 - `constants.py` loads all config at import time as module-level constants
 - Error types defined in `nzgd/extract/cpt/errors.py`
 - **Imports**: Prefer importing entire modules and referencing with dot notation (e.g., `from nzgd import constants` then `constants.VALUE`, or `from nzgd.extract.cpt import search` then `search.func()`). Exceptions: `from pathlib import Path`, `from tqdm import tqdm`, `import numpy as np`, `import pandas as pd`.
+- **No unnecessary aliases**: Never define variables that just rename an attribute or item access (e.g., avoid `thing = collection.thing` or `thing = collection["thing"]`). Reference `collection.thing` or `collection["thing"]` directly at the use site.
+- **Prefer inline code over helper functions**: Inline code directly rather than extracting helper functions, unless the helper significantly reduces the number of lines of code (e.g., eliminates real duplication) or genuinely improves readability. A helper that is called once and adds indirection without clarifying intent should not exist.
