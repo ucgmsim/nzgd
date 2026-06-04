@@ -174,3 +174,33 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
+
+# === Project-local: IDE, scratch, and large data (kept out of version control) ===
+
+# IDE / editor directories
+.idea/
+.vscode/
+.antigravitycli/
+
+# Scratch analysis scripts and outputs (repo root)
+/concat_df.csv
+/diff_df.csv
+/dataframe_differences_1.txt
+/problematic_rows.csv
+/detailed_inspection.py
+/inspect_failed_extractions.py
+/inspect_single_failures.py
+/comparison_reports/
+
+# Temporary/scratch analysis area
+nzgd/scripts/temp/
+
+# Large data resources (too big for git)
+nzgd/resources/nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl.csv
+nzgd/resources/nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl.csv.gz
+nzgd/resources/nzgd_id_to_region.csv
+
+# Transient NZGD catalog backup/intermediate artifacts
+nzgd/resources/nzgd_catalogs_from_api/*.pre-swap-*
+nzgd/resources/nzgd_catalogs_from_api/*.bak-*
+nzgd/resources/nzgd_catalogs_from_api/*.merged-*
