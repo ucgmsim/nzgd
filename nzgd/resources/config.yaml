@@ -220,6 +220,12 @@ deduplication:
 
   within_record:
     canonical_selector: nzgd.dedup.canonical_selectors.default_within_record_canonical
+    # Record types that run Pass 0 (within-record consolidation). SPT is
+    # excluded because every SPT report is one source file (no _sheet_
+    # expansion), so the only Pass 0 mechanism is cross-stem trace matching,
+    # which would merge AGS and PDF copies of the same borehole — not what
+    # we want.
+    enabled_record_types: ["CPT"]
 
   field_plausibility_ranges:
     nzgdrecord:

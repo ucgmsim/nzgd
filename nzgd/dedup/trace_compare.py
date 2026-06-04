@@ -49,27 +49,58 @@ def load_traces(
 def trace_score(a: np.ndarray, b: np.ndarray, step: float) -> float:
     """Aligned normalised-RMSE sum across non-depth channels.
 
-    Returns inf if either trace has fewer than 2 points or their depth ranges
-    do not overlap. Each channel's RMSE is divided by the mean absolute value
-    across both traces (floored at 1e-6) before being summed across channels,
-    so the score is comparable across qc/fs/u2 which have different magnitudes.
+    Returns inf if either trace has fewer than 2 points, their depth ranges do
+    not overlap, or no channel has enough finite points to score. Each channel
+    is independently masked: per-channel NaN values are filtered out before
+    interpolation, and grid points that fall inside a NaN gap in either source
+    are excluded from the RMSE so np.interp's straight-line bridge across a
+    gap does not invent a fake discrepancy. Each channel's RMSE is divided by
+    the mean absolute value across both traces (floored at 1e-6) before being
+    summed across channels, so the score is comparable across qc/fs/u2 which
+    have different magnitudes.
     """
     if a.shape[0] < 2 or b.shape[0] < 2:
         return math.inf
-    lo = max(a[:, 0].min(), b[:, 0].min())
-    hi = min(a[:, 0].max(), b[:, 0].max())
-    if math.isnan(lo) or math.isnan(hi) or hi <= lo:
+    a_depth_finite = a[np.isfinite(a[:, 0])]
+    b_depth_finite = b[np.isfinite(b[:, 0])]
+    if a_depth_finite.shape[0] < 2 or b_depth_finite.shape[0] < 2:
+        return math.inf
+    lo = max(a_depth_finite[:, 0].min(), b_depth_finite[:, 0].min())
+    hi = min(a_depth_finite[:, 0].max(), b_depth_finite[:, 0].max())
+    if hi <= lo:
         return math.inf
     grid = np.arange(lo, hi + step / 2, step)
     if grid.size < 2:
         return math.inf
+    a_dfinite_mask = np.isfinite(a[:, 0])
+    b_dfinite_mask = np.isfinite(b[:, 0])
+    a_dfinite = a[a_dfinite_mask, 0]
+    b_dfinite = b[b_dfinite_mask, 0]
     total = 0.0
+    n_channels_used = 0
     for ch in range(1, a.shape[1]):
-        ai = np.interp(grid, a[:, 0], a[:, ch])
-        bi = np.interp(grid, b[:, 0], b[:, ch])
-        denom = max((np.abs(ai).mean() + np.abs(bi).mean()) / 2.0, 1e-6)
-        rmse = float(np.sqrt(np.mean((ai - bi) ** 2)))
+        fa = a_dfinite_mask & np.isfinite(a[:, ch])
+        fb = b_dfinite_mask & np.isfinite(b[:, ch])
+        if fa.sum() < 2 or fb.sum() < 2:
+            continue
+        ai = np.interp(grid, a[fa, 0], a[fa, ch])
+        bi = np.interp(grid, b[fb, 0], b[fb, ch])
+        # Validity indicators: 1.0 where the channel was finite in source, 0.0
+        # where it was NaN. Interp on these tells us how much of the value at
+        # each grid point came from a real measurement (vs. bridging a NaN gap).
+        ind_a = np.interp(grid, a_dfinite, fa[a_dfinite_mask].astype(float))
+        ind_b = np.interp(grid, b_dfinite, fb[b_dfinite_mask].astype(float))
+        valid = (ind_a >= 0.999) & (ind_b >= 0.999)
+        if valid.sum() < 2:
+            continue
+        denom = max(
+            (np.abs(ai[valid]).mean() + np.abs(bi[valid]).mean()) / 2.0, 1e-6,
+        )
+        rmse = float(np.sqrt(np.mean((ai[valid] - bi[valid]) ** 2)))
         total += rmse / denom
+        n_channels_used += 1
+    if n_channels_used == 0:
+        return math.inf
     return total
 
 

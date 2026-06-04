@@ -4,6 +4,7 @@ Copies a source NZGD SQLite DB to a target path, then applies hash and fuzzy
 deduplication passes to the copy. The source DB is never modified.
 """
 
+import csv
 import json
 import shutil
 import sqlite3
@@ -29,6 +30,7 @@ from nzgd.dedup.reports import (
     write_failures_report,
 )
 from nzgd.dedup.schema import apply_dedup_schema
+from nzgd.dedup.verify import find_spt_format_orphans
 
 
 app = typer.Typer(help=__doc__)
@@ -88,20 +90,27 @@ def main(
     total_clusters = 0
     total_records = 0
 
+    within_enabled = set(
+        constants.DEDUP_CONFIG.get("within_record", {}).get("enabled_record_types", ["CPT", "BH"])
+    )
     for cfg, skip in ((CPT_TABLE_CONFIG, skip_cpt), (SPT_TABLE_CONFIG, skip_spt)):
         if skip:
             typer.echo(f"Skipping {cfg.record_type} per CLI flag.")
             continue
-        typer.echo(f"[{cfg.record_type}] Pass 0: within-record consolidation ...")
-        pass0_thresholds = {
-            "trace_score_max": constants.DEDUP_CONFIG["fuzzy_pass"]["trace_score_max"],
-            "trace_resample_step_m": constants.DEDUP_CONFIG["fuzzy_pass"]["trace_resample_step_m"],
-        }
-        within_plan = generate_within_record_consolidation_plan(conn, cfg, pass0_thresholds)
-        c0, r0 = apply_within_record_consolidation_plan(
-            conn, within_plan, run_id, cfg, failures=all_failures,
-        )
-        typer.echo(f"[{cfg.record_type}] Pass 0: absorbed {r0} rows across {c0} clusters.")
+        if cfg.record_type in within_enabled:
+            typer.echo(f"[{cfg.record_type}] Pass 0: within-record consolidation ...")
+            pass0_thresholds = {
+                "trace_score_max": constants.DEDUP_CONFIG["fuzzy_pass"]["trace_score_max"],
+                "trace_resample_step_m": constants.DEDUP_CONFIG["fuzzy_pass"]["trace_resample_step_m"],
+            }
+            within_plan = generate_within_record_consolidation_plan(conn, cfg, pass0_thresholds)
+            c0, r0 = apply_within_record_consolidation_plan(
+                conn, within_plan, run_id, cfg, failures=all_failures,
+            )
+            typer.echo(f"[{cfg.record_type}] Pass 0: absorbed {r0} rows across {c0} clusters.")
+        else:
+            typer.echo(f"[{cfg.record_type}] Pass 0: skipped (not in within_record.enabled_record_types).")
+            c0, r0 = 0, 0
         typer.echo(f"[{cfg.record_type}] Pass 1: hash ...")
         hash_plan = generate_hash_merge_plan(conn, cfg)
         c1, r1 = apply_merge_plan(conn, hash_plan, run_id, cfg, failures=all_failures)
@@ -135,6 +144,35 @@ def main(
         failures_path = out_dir / constants.DEDUP_CONFIG["output"]["failures_filename"]
         write_failures_report(all_failures, failures_path)
         typer.echo(f"{len(all_failures)} cluster(s) failed; see {failures_path}")
+
+    # Post-run verification (read-only): confirm no cross-record SPT merge dropped the
+    # only copy of an AGS/PDF format. Deleted reports survive only in `source`, so open
+    # it read-only to recover their formats.
+    source_conn = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+    try:
+        spt_format_orphans = find_spt_format_orphans(conn, source_conn)
+    finally:
+        source_conn.close()
+    n_spt_cross_record = conn.execute(
+        "SELECT COUNT(*) FROM dedup_audit WHERE record_type = 'BH' "
+        "AND match_pass IN ('hash', 'fuzzy')"
+    ).fetchone()[0]
+    if spt_format_orphans:
+        orphans_path = out_dir / "dedup_spt_format_orphans.csv"
+        with open(orphans_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(spt_format_orphans[0].keys()))
+            writer.writeheader()
+            writer.writerows(spt_format_orphans)
+        typer.echo(
+            f"VERIFY FAIL: {len(spt_format_orphans)} cross-record SPT merge(s) dropped the "
+            f"only copy of an AGS/PDF format; see {orphans_path}.",
+            err=True,
+        )
+    else:
+        typer.echo(
+            f"VERIFY OK: {n_spt_cross_record} cross-record SPT merges checked; "
+            f"no orphaned AGS/PDF formats."
+        )
 
     typer.echo(f"Done. Deduped DB at {target}. Report at {report_path}.")
     conn.close()
