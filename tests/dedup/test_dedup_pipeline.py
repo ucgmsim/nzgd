@@ -607,3 +607,17 @@ def test_pass0_singleton_independent_stem_not_absorbed_into_matching_pair(fresh_
     assert (n_clusters, n_records) == (1, 1)
     remaining = sorted(r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport"))
     assert remaining == [10, 20]  # B.ags's row (20) survives
+
+
+def test_select_value_mode_wins() -> None:
+    from nzgd.dedup.supplemental_consolidation import select_value
+    # 0.8 appears twice, 0.75 once -> mode 0.8
+    assert select_value([(0.8, 10), (0.8, 11), (0.75, 12)]) == 0.8
+
+
+def test_select_value_tiebreak_decimals_then_cpt_id() -> None:
+    from nzgd.dedup.supplemental_consolidation import select_value
+    # tie on count (1 each); 0.75 has more decimals than 0.8 -> 0.75
+    assert select_value([(0.8, 10), (0.75, 11)]) == 0.75
+    # tie on count AND decimals -> smallest cpt_id wins (1.3 @ id 5)
+    assert select_value([(1.2, 7), (1.3, 5)]) == 1.3
