@@ -621,3 +621,100 @@ def test_select_value_tiebreak_decimals_then_cpt_id() -> None:
     assert select_value([(0.8, 10), (0.75, 11)]) == 0.75
     # tie on count AND decimals -> smallest cpt_id wins (1.3 @ id 5)
     assert select_value([(1.2, 7), (1.3, 5)]) == 1.3
+
+
+def _run_supp_consolidation(conn: sqlite3.Connection, cfg) -> tuple[int, int]:
+    from nzgd.dedup.supplemental_consolidation import (
+        consolidate_within_record_supplemental,
+    )
+    run_id = _start_run(conn)
+    return consolidate_within_record_supplemental(conn, cfg, run_id)
+
+
+def test_supp_cross_cluster_fill(fresh_db: sqlite3.Connection) -> None:
+    """record-3 shape: .ags trace row NULL, .xls sibling has predrill+GWL -> .ags filled."""
+    trace = [(0.1, 1.0, 0.01, 0.0), (0.2, 1.1, 0.011, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=3)
+    add_cpt_report(fresh_db, cpt_id=13, nzgd_id=3, trace=trace, source_file="CPT_3_AGS01.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=16, nzgd_id=3, trace=trace, source_file="CPT_3_AGS01.xls_sheet_TabulatedData")
+    fresh_db.execute("UPDATE cptreport SET predrill_depth_m=0.8, extracted_gwl_m=1.3, gwl_method_id=1 WHERE cpt_id=16")
+
+    records, cells = _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    assert records == 1
+    row = fresh_db.execute(
+        "SELECT predrill_depth_m, extracted_gwl_m, gwl_method_id FROM cptreport WHERE cpt_id=13"
+    ).fetchone()
+    assert row == (0.8, 1.3, 1)
+
+
+def test_supp_gwl_zero_preserved_when_only_value(fresh_db: sqlite3.Connection) -> None:
+    """Lone GWL 0 (no better alternative) is preserved, not nulled, and fills the NULL sibling."""
+    trace = [(0.1, 1.0, 0.01, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=5)
+    add_cpt_report(fresh_db, cpt_id=1, nzgd_id=5, trace=trace, source_file="a.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=2, nzgd_id=5, trace=trace, source_file="a.xls_sheet_Data")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=0 WHERE cpt_id=2")
+
+    _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    vals = [r[0] for r in fresh_db.execute("SELECT extracted_gwl_m FROM cptreport ORDER BY cpt_id")]
+    assert vals == [0.0, 0.0]
+
+
+def test_supp_gwl_zero_overridden_by_positive(fresh_db: sqlite3.Connection) -> None:
+    """A positive in-range sibling overrides a non-useful 0."""
+    trace = [(0.1, 1.0, 0.01, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=6)
+    add_cpt_report(fresh_db, cpt_id=1, nzgd_id=6, trace=trace, source_file="a.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=2, nzgd_id=6, trace=trace, source_file="a.xls_sheet_Data")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=0 WHERE cpt_id=1")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=1.5 WHERE cpt_id=2")
+
+    _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    vals = [r[0] for r in fresh_db.execute("SELECT extracted_gwl_m FROM cptreport ORDER BY cpt_id")]
+    assert vals == [1.5, 1.5]
+
+
+def test_supp_small_spread_conflict_selector(fresh_db: sqlite3.Connection) -> None:
+    """0.75 vs 0.80 predrill (spread 0.05): NULL canonical filled with selected 0.75; sibling keeps 0.80."""
+    trace = [(0.1, 1.0, 0.01, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=7)
+    add_cpt_report(fresh_db, cpt_id=1, nzgd_id=7, trace=trace, source_file="a.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=2, nzgd_id=7, trace=trace, source_file="a.xls_sheet_Data")
+    add_cpt_report(fresh_db, cpt_id=3, nzgd_id=7, trace=trace, source_file="a.txt_sheet_0")
+    fresh_db.execute("UPDATE cptreport SET predrill_depth_m=0.75 WHERE cpt_id=2")
+    fresh_db.execute("UPDATE cptreport SET predrill_depth_m=0.80 WHERE cpt_id=3")
+
+    _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    vals = {r[0]: r[1] for r in fresh_db.execute("SELECT cpt_id, predrill_depth_m FROM cptreport")}
+    assert vals == {1: 0.75, 2: 0.75, 3: 0.80}
+
+
+def test_supp_large_spread_conflict_skipped(fresh_db: sqlite3.Connection) -> None:
+    """1.5 vs 22.0 GWL (spread 20.5 > 0.5): nothing changes; canonical stays NULL; conflict logged."""
+    trace = [(0.1, 1.0, 0.01, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=8)
+    add_cpt_report(fresh_db, cpt_id=1, nzgd_id=8, trace=trace, source_file="a.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=2, nzgd_id=8, trace=trace, source_file="a.xls_sheet_Data")
+    add_cpt_report(fresh_db, cpt_id=3, nzgd_id=8, trace=trace, source_file="a.txt_sheet_0")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=1.5 WHERE cpt_id=2")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=22.0 WHERE cpt_id=3")
+
+    _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    vals = [r[0] for r in fresh_db.execute("SELECT extracted_gwl_m FROM cptreport ORDER BY cpt_id")]
+    assert vals == [None, 1.5, 22.0]
+    conflicts = fresh_db.execute(
+        "SELECT metadata_conflicts_json FROM dedup_audit WHERE canonical_nzgd_id=8"
+    ).fetchone()[0]
+    assert conflicts is not None and "extracted_gwl_m" in json.loads(conflicts)
+
+
+def test_supp_idempotent(fresh_db: sqlite3.Connection) -> None:
+    """Running twice produces no further changes."""
+    trace = [(0.1, 1.0, 0.01, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=9)
+    add_cpt_report(fresh_db, cpt_id=1, nzgd_id=9, trace=trace, source_file="a.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=2, nzgd_id=9, trace=trace, source_file="a.xls_sheet_Data")
+    fresh_db.execute("UPDATE cptreport SET predrill_depth_m=1.2 WHERE cpt_id=2")
+    _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    records2, cells2 = _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
+    assert cells2 == 0
