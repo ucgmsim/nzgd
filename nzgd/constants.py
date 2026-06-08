@@ -496,19 +496,19 @@ term_dict = {
         "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
     },
     "predrill": {
-        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX, "nil"],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX, "nil"],
     },
     "pre-drill": {
-        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX, "nil"],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX, "nil"],
     },
     "predrilled": {
-        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_standalone": [NUMERICAL_VALUES_REGEX, "nil"],
         "assuming_cell_is_a_value_in_need_of_field_name_to_confirm": [],
-        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX],
+        "assuming_cell_is_a_field_name_in_need_of_a_value": [NUMERICAL_VALUES_REGEX, "nil"],
     },
 }
 

@@ -227,6 +227,13 @@ def extract_numerical_quantity(
         Updated extracted values with the specified quantity if found.
     """
 
+    # For predrill depth, "Nil" means "no pre-drilling" (= 0 m). Normalise before the
+    # numeric filter so the substituted "0" survives it.
+    if quantity_to_extract == constants.QuantityToExtract.predrill_depth:
+        nil_mask = possible_values_df["value"].astype(str).str.strip().str.lower() == "nil"
+        possible_values_df = possible_values_df.copy()
+        possible_values_df.loc[nil_mask, "value"] = "0"
+
     # Filter out rows that do not include a numerical value
     possible_values_df = possible_values_df[
         possible_values_df["value"].str.contains(
