@@ -572,6 +572,20 @@ def test_pass0_spt_with_all_nan_depths_does_not_crash(fresh_db: sqlite3.Connecti
     apply_within_record_consolidation_plan(fresh_db, plan, run_id, SPT_TABLE_CONFIG)
 
 
+def test_supplemental_consolidation_match_pass_allowed(fresh_db: sqlite3.Connection) -> None:
+    """After apply_dedup_schema, dedup_audit accepts match_pass='supplemental_consolidation'."""
+    run_id = _start_run(fresh_db)  # applies schema (incl. the new migration)
+    fresh_db.execute(
+        "INSERT INTO dedup_audit (run_id, cluster_id, canonical_nzgd_id, merged_nzgd_id, "
+        "record_type, match_pass, report_pairs_json, merged_at) VALUES (?,?,?,?,?,?,?,?)",
+        (run_id, 1, 5, 5, "CPT", "supplemental_consolidation", "[]", "2026-06-08T00:00:00Z"),
+    )
+    got = fresh_db.execute(
+        "SELECT match_pass FROM dedup_audit WHERE canonical_nzgd_id = 5"
+    ).fetchone()[0]
+    assert got == "supplemental_consolidation"
+
+
 def test_pass0_singleton_independent_stem_not_absorbed_into_matching_pair(fresh_db: sqlite3.Connection) -> None:
     """Regression: idx=1 singleton stem must not collide with 1-based component label 1.
 
