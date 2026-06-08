@@ -90,6 +90,7 @@ class ExtractedSingleValuesDict(dict):
 def extract_numerical_value(
     s: str,
     check_for_cm: bool = False,
+    is_gwl: bool = False,
 ) -> float | None:
     """Extract numerical value from a string, optionally checking for cm.
 
@@ -99,6 +100,11 @@ def extract_numerical_value(
         The input string from which to extract the numerical value.
     check_for_cm : bool
         Whether to check for "cm" units and convert to meters.
+    is_gwl : bool
+        Whether the value being extracted is a ground water level. When True,
+        raw negative values in constants.GWL_NO_WATER_SENTINELS are treated as
+        "no-water" template defaults and returned as None rather than being
+        abs'd into a fabricated in-range value.
 
     Returns
     -------
@@ -112,8 +118,11 @@ def extract_numerical_value(
     if not match:
         return None
 
-    # Get the numerical value
-    value = np.abs(float(match.group()))
+    raw = float(match.group())
+    if is_gwl and raw in constants.GWL_NO_WATER_SENTINELS:
+        # "no-water" template default; np.abs would fabricate 30/60/100.
+        return None
+    value = np.abs(raw)
 
     if check_for_cm:
         # Check if the value is followed by "cm" (with optional spaces)
@@ -244,6 +253,8 @@ def extract_numerical_quantity(
         check_for_cm = False
         max_allowed_value = constants.MAX_ALLOWED_TIP_NET_AREA_RATIO
         min_allowed_value = constants.MIN_ALLOWED_TIP_NET_AREA_RATIO
+
+    is_gwl = quantity_to_extract == constants.QuantityToExtract.ground_water_level
 
     search_terms_for_all_quantities = [
         term
@@ -381,6 +392,7 @@ def extract_numerical_quantity(
                             cell_contents.find(associated_numerical_value_str) :
                         ],
                         check_for_cm=check_for_cm,
+                        is_gwl=is_gwl,
                     )
                 )
                 # If extracting ground water level, also check for a method note
@@ -398,6 +410,7 @@ def extract_numerical_quantity(
                 extract_numerical_value(
                     cell_contents,
                     check_for_cm=check_for_cm,
+                    is_gwl=is_gwl,
                 )
             )
 
@@ -566,110 +579,115 @@ def extract_termination_reason(
     return extracted_values
 
 
-all_options_df = pd.read_csv(
-    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
-    / constants.ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME,
-)
+def main() -> None:
+    all_options_df = pd.read_csv(
+        constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
+        / constants.ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME,
+    )
 
-# Create reverse mapping from search term to quantity description
-search_term_to_quantity = {}
-for quantity_desc, search_terms in constants.quantity_to_search_term.items():
-    for search_term in search_terms:
-        search_term_to_quantity[search_term] = quantity_desc
+    # Create reverse mapping from search term to quantity description
+    search_term_to_quantity = {}
+    for quantity_desc, search_terms in constants.quantity_to_search_term.items():
+        for search_term in search_terms:
+            search_term_to_quantity[search_term] = quantity_desc
 
-# Add quantity column based on search_term
-all_options_df["quantity"] = all_options_df["search_term"].map(
-    search_term_to_quantity,
-)
+    # Add quantity column based on search_term
+    all_options_df["quantity"] = all_options_df["search_term"].map(
+        search_term_to_quantity,
+    )
 
-unique_nzgd_id = all_options_df["nzgd_id"].unique()
+    unique_nzgd_id = all_options_df["nzgd_id"].unique()
 
-# Initialize the dictionary to store extracted values
-extracted_values_dict = ExtractedSingleValuesDict()
-# Dictionary to track cases with multiple possible values
-# Key: (nzgd_id, filename, sheet_name, quantity), Value: count
-multiple_values_count = {}
-for nzgd_id in tqdm(unique_nzgd_id):
-    per_nzgd_id_df = all_options_df[all_options_df["nzgd_id"] == nzgd_id]
+    # Initialize the dictionary to store extracted values
+    extracted_values_dict = ExtractedSingleValuesDict()
+    # Dictionary to track cases with multiple possible values
+    # Key: (nzgd_id, filename, sheet_name, quantity), Value: count
+    multiple_values_count = {}
+    for nzgd_id in tqdm(unique_nzgd_id):
+        per_nzgd_id_df = all_options_df[all_options_df["nzgd_id"] == nzgd_id]
 
-    unique_file_names = per_nzgd_id_df["file_name"].unique()
+        unique_file_names = per_nzgd_id_df["file_name"].unique()
 
-    for filename in unique_file_names:
-        per_filename_nzgd_id_df = per_nzgd_id_df[
-            per_nzgd_id_df["file_name"] == filename
-        ]
-
-        unique_sheet_names = per_filename_nzgd_id_df["sheet_name"].unique()
-
-        for sheet_name in unique_sheet_names:
-            per_sheet_filename_id_df = per_filename_nzgd_id_df[
-                per_filename_nzgd_id_df["sheet_name"] == sheet_name
+        for filename in unique_file_names:
+            per_filename_nzgd_id_df = per_nzgd_id_df[
+                per_nzgd_id_df["file_name"] == filename
             ]
 
-            # Get the ExtractedSingleValues instance for this combination
-            key = (nzgd_id, filename, sheet_name)
-            extracted_values_from_sheet_filename_id = extracted_values_dict[key]
+            unique_sheet_names = per_filename_nzgd_id_df["sheet_name"].unique()
 
-            unique_quantities = per_sheet_filename_id_df["quantity"].unique()
+            for sheet_name in unique_sheet_names:
+                per_sheet_filename_id_df = per_filename_nzgd_id_df[
+                    per_filename_nzgd_id_df["sheet_name"] == sheet_name
+                ]
 
-            # For each unique (nzgd_id, filename, sheet_name) combination, select a
-            # possible extracted value for each quantity.
-            # The same ExtractedSingleValues instance is updated for each quantity.
-            for quantity in unique_quantities:
-                if quantity is None:
-                    continue
+                # Get the ExtractedSingleValues instance for this combination
+                key = (nzgd_id, filename, sheet_name)
+                extracted_values_from_sheet_filename_id = extracted_values_dict[key]
 
-                per_quantity_sheet_filename_id_df = per_sheet_filename_id_df[
-                    per_sheet_filename_id_df["quantity"] == quantity
-                ].copy()
+                unique_quantities = per_sheet_filename_id_df["quantity"].unique()
 
-                # There are no valid options, so just continue to the next check
-                if len(per_quantity_sheet_filename_id_df) == 0:
-                    continue
-                per_quantity_sheet_filename_id_df["value"] = (
-                    per_quantity_sheet_filename_id_df["value"].astype(str)
-                )
+                # For each unique (nzgd_id, filename, sheet_name) combination, select a
+                # possible extracted value for each quantity.
+                # The same ExtractedSingleValues instance is updated for each quantity.
+                for quantity in unique_quantities:
+                    if quantity is None:
+                        continue
 
-                if quantity == constants.QuantityToExtract.termination_reason:
-                    extracted_values_from_sheet_filename_id = (
-                        extract_termination_reason(
-                            extracted_values_from_sheet_filename_id,
-                            per_quantity_sheet_filename_id_df,
-                        )
+                    per_quantity_sheet_filename_id_df = per_sheet_filename_id_df[
+                        per_sheet_filename_id_df["quantity"] == quantity
+                    ].copy()
+
+                    # There are no valid options, so just continue to the next check
+                    if len(per_quantity_sheet_filename_id_df) == 0:
+                        continue
+                    per_quantity_sheet_filename_id_df["value"] = (
+                        per_quantity_sheet_filename_id_df["value"].astype(str)
                     )
 
-                else:
-                    extracted_values_from_sheet_filename_id = (
-                        extract_numerical_quantity(
-                            extracted_values_from_sheet_filename_id,
-                            per_quantity_sheet_filename_id_df,
-                            quantity,
+                    if quantity == constants.QuantityToExtract.termination_reason:
+                        extracted_values_from_sheet_filename_id = (
+                            extract_termination_reason(
+                                extracted_values_from_sheet_filename_id,
+                                per_quantity_sheet_filename_id_df,
+                            )
                         )
-                    )
 
-            extracted_values_dict[key] = extracted_values_from_sheet_filename_id
+                    else:
+                        extracted_values_from_sheet_filename_id = (
+                            extract_numerical_quantity(
+                                extracted_values_from_sheet_filename_id,
+                                per_quantity_sheet_filename_id_df,
+                                quantity,
+                            )
+                        )
 
-# Prepare data for DataFrame
-df_data = []
-for key, values in extracted_values_dict.items():
-    nzgd_id, file_name, sheet_name = key
-    row_data = {
-        "nzgd_id": nzgd_id,
-        "file_name": file_name,
-        "sheet_name": sheet_name,
-        "termination_reason": values.termination_reason,
-        "ground_water_level": values.ground_water_level,
-        "gwl_method": values.ground_water_level_note,
-        "tip_net_area_ratio": values.tip_net_area_ratio,
-        "predrill_depth": values.predrill_depth,
-    }
-    df_data.append(row_data)
+                extracted_values_dict[key] = extracted_values_from_sheet_filename_id
 
-# Create DataFrame
-extracted_df = pd.DataFrame(df_data)
+    # Prepare data for DataFrame
+    df_data = []
+    for key, values in extracted_values_dict.items():
+        nzgd_id, file_name, sheet_name = key
+        row_data = {
+            "nzgd_id": nzgd_id,
+            "file_name": file_name,
+            "sheet_name": sheet_name,
+            "termination_reason": values.termination_reason,
+            "ground_water_level": values.ground_water_level,
+            "gwl_method": values.ground_water_level_note,
+            "tip_net_area_ratio": values.tip_net_area_ratio,
+            "predrill_depth": values.predrill_depth,
+        }
+        df_data.append(row_data)
 
-extracted_df.to_csv(
-    constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
-    / constants.CPT_SUPPLEMENTAL_VALUES_FILENAME,
-    index=False,
-)
+    # Create DataFrame
+    extracted_df = pd.DataFrame(df_data)
+
+    extracted_df.to_csv(
+        constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
+        / constants.CPT_SUPPLEMENTAL_VALUES_FILENAME,
+        index=False,
+    )
+
+
+if __name__ == "__main__":
+    main()
