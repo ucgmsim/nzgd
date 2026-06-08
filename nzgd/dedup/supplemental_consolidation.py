@@ -60,12 +60,15 @@ def consolidate_within_record_supplemental(
     conn: sqlite3.Connection,
     table_cfg: TableConfig,
     run_id: int,
+    failures: list[dict] | None = None,
 ) -> tuple[int, int]:
     """Fill each nzgd_id's surviving rows with its best-available supplemental value.
 
     Returns (n_records_changed, n_cells_filled). Writes one dedup_audit row per
     affected nzgd_id (match_pass='supplemental_consolidation'), recording filled
     cells in metadata_copied_json and skipped conflicts in metadata_conflicts_json.
+    If `failures` is given, a per-record error appends `{nzgd_id, error}` and
+    continues; otherwise it re-raises.
     """
     table = table_cfg.report_table
     id_col = table_cfg.report_id_column
@@ -167,9 +170,12 @@ def consolidate_within_record_supplemental(
             if record_changed:
                 n_records_changed += 1
             cur.execute(f"RELEASE SAVEPOINT {savepoint}")
-        except Exception:
+        except Exception as exc:
             cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if failures is not None:
+                failures.append({"nzgd_id": nzgd_id, "error": repr(exc)})
+                continue
             raise
     conn.commit()
     return n_records_changed, n_cells_filled

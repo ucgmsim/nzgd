@@ -28,6 +28,10 @@ from nzgd.dedup.reports import (
     write_calibration_report,
     write_dedup_report,
     write_failures_report,
+    write_supplemental_consolidation_report,
+)
+from nzgd.dedup.supplemental_consolidation import (
+    consolidate_within_record_supplemental,
 )
 from nzgd.dedup.schema import apply_dedup_schema
 from nzgd.dedup.verify import find_spt_format_orphans
@@ -122,6 +126,16 @@ def main(
         c2, r2 = apply_merge_plan(conn, fuzzy_plan, run_id, cfg, failures=all_failures)
         typer.echo(f"[{cfg.record_type}] Pass 2: merged {r2} records across {c2} clusters.")
 
+        if cfg.record_type in within_enabled:
+            typer.echo(f"[{cfg.record_type}] Supplemental consolidation ...")
+            supp_records, supp_cells = consolidate_within_record_supplemental(
+                conn, cfg, run_id, failures=all_failures
+            )
+            typer.echo(
+                f"[{cfg.record_type}] Supplemental consolidation: filled {supp_cells} "
+                f"cells across {supp_records} records."
+            )
+
         # Write a per-record-type calibration file when there's content
         if calibration.get("positive") or calibration.get("negative"):
             cal_path = out_dir / f"{cfg.record_type.lower()}_{constants.DEDUP_CONFIG['output']['calibration_report_filename']}"
@@ -139,6 +153,10 @@ def main(
 
     report_path = out_dir / constants.DEDUP_CONFIG["output"]["report_filename"]
     write_dedup_report(conn, run_id, report_path)
+
+    supp_report_path = out_dir / constants.DEDUP_CONFIG["output"]["supplemental_consolidation_report_filename"]
+    write_supplemental_consolidation_report(conn, run_id, supp_report_path)
+    typer.echo(f"Supplemental consolidation report at {supp_report_path}.")
 
     if all_failures:
         failures_path = out_dir / constants.DEDUP_CONFIG["output"]["failures_filename"]
