@@ -587,6 +587,7 @@ def extract_termination_reason(
 
 
 def main() -> None:
+    """Read the candidate CSV, filter it to final per-record supplemental values, and write the output CSV."""
     all_options_df = pd.read_csv(
         constants.SUPPLEMENTAL_VALUES_OUTPUT_DIR
         / constants.ALL_POTENTIAL_CPT_SUPPLEMENTAL_VALUES_FILENAME,
@@ -607,9 +608,6 @@ def main() -> None:
 
     # Initialize the dictionary to store extracted values
     extracted_values_dict = ExtractedSingleValuesDict()
-    # Dictionary to track cases with multiple possible values
-    # Key: (nzgd_id, filename, sheet_name, quantity), Value: count
-    multiple_values_count = {}
     for nzgd_id in tqdm(unique_nzgd_id):
         per_nzgd_id_df = all_options_df[all_options_df["nzgd_id"] == nzgd_id]
 
