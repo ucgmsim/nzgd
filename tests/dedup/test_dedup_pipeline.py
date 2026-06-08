@@ -718,3 +718,23 @@ def test_supp_idempotent(fresh_db: sqlite3.Connection) -> None:
     _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
     records2, cells2 = _run_supp_consolidation(fresh_db, CPT_TABLE_CONFIG)
     assert cells2 == 0
+
+
+def test_supplemental_consolidation_report(fresh_db: sqlite3.Connection, tmp_path) -> None:
+    from nzgd.dedup.reports import write_supplemental_consolidation_report
+    trace = [(0.1, 1.0, 0.01, 0.0)]
+    add_cpt_record(fresh_db, nzgd_id=8)
+    add_cpt_report(fresh_db, cpt_id=1, nzgd_id=8, trace=trace, source_file="a.ags_sheet_0")
+    add_cpt_report(fresh_db, cpt_id=2, nzgd_id=8, trace=trace, source_file="a.xls_sheet_Data")
+    add_cpt_report(fresh_db, cpt_id=3, nzgd_id=8, trace=trace, source_file="a.txt_sheet_0")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=1.5 WHERE cpt_id=2")
+    fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=22.0 WHERE cpt_id=3")
+    run_id = _start_run(fresh_db)
+    from nzgd.dedup.supplemental_consolidation import consolidate_within_record_supplemental
+    consolidate_within_record_supplemental(fresh_db, CPT_TABLE_CONFIG, run_id)
+
+    out = tmp_path / "supp.csv"
+    write_supplemental_consolidation_report(fresh_db, run_id, out)
+    text = out.read_text()
+    assert "nzgd_id" in text and "conflict_fields" in text
+    assert "extracted_gwl_m" in text  # the skipped conflict is reported

@@ -65,3 +65,27 @@ def write_failures_report(failures: list[dict], path: Path) -> None:
                 fail.get("record_type"),
                 fail.get("error"),
             ])
+
+
+def write_supplemental_consolidation_report(
+    conn: sqlite3.Connection, run_id: int, path: Path
+) -> None:
+    """Flatten supplemental_consolidation audit rows for a run into a CSV."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT canonical_nzgd_id, metadata_copied_json, metadata_conflicts_json, merged_at "
+        "FROM dedup_audit WHERE run_id = ? AND match_pass = 'supplemental_consolidation' "
+        "ORDER BY canonical_nzgd_id",
+        (run_id,),
+    )
+    rows = cur.fetchall()
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["nzgd_id", "filled_fields", "conflict_fields", "conflict_detail", "consolidated_at"])
+        for nzgd_id, copied_json, conflicts_json, merged_at in rows:
+            filled = ",".join(json.loads(copied_json).keys()) if copied_json else ""
+            conflicts = json.loads(conflicts_json) if conflicts_json else {}
+            writer.writerow([
+                nzgd_id, filled, ",".join(conflicts.keys()),
+                json.dumps(conflicts) if conflicts else "", merged_at,
+            ])
