@@ -312,6 +312,10 @@ NUMERICAL_VALUES_REGEX = r"-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?"
 MAX_ALLOWED_GWL = CONFIG["allowed_bounds_for_extracted_values"]["max_allowed_gwl"]
 MIN_ALLOWED_GWL = CONFIG["allowed_bounds_for_extracted_values"]["min_allowed_gwl"]
 
+# GWL "no-water" sentinel defaults (e.g. RAW01.txt "Waterlevel: -30/-60/-100").
+# np.abs() would otherwise fabricate 30/60/100 (see docs/gwl_zero_is_placeholder.md Part 2).
+GWL_NO_WATER_SENTINELS = frozenset(float(v) for v in CONFIG["gwl_no_water_sentinels"])
+
 MAX_ALLOWED_PREDRILL_DEPTH = CONFIG["allowed_bounds_for_extracted_values"][
     "max_allowed_predrill_depth"
 ]

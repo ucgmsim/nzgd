@@ -111,6 +111,11 @@ known_missing_value_placeholders:
   - -7.752
 
 
+gwl_no_water_sentinels:
+  - -30
+  - -60
+  - -100
+
 known_false_positive_column_names:
   "Su ratio": "u (pore pressure (u2) in MPa" # identified from CPT_158096
   "Equilibirum pore pressure (u0) in MPa": "u (pore pressure (u2) in MPa" # identified from CPT_95223
@@ -217,6 +222,13 @@ deduplication:
     report_filename: "dedup_report.csv"
     calibration_report_filename: "calibration_report.csv"
     failures_filename: "dedup_failures.csv"
+    supplemental_consolidation_report_filename: "supplemental_consolidation_report.csv"
+
+  within_record_supplemental:
+    small_spread_threshold:
+      predrill_depth_m:   0.5
+      extracted_gwl_m:    0.5
+      tip_net_area_ratio: 0.05
 
   within_record:
     canonical_selector: nzgd.dedup.canonical_selectors.default_within_record_canonical
