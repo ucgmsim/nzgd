@@ -206,7 +206,9 @@ Steps:
 3. Compute `nztm_y`/`nztm_x` for rows with valid coordinates (vectorized
    qcore transform).
 4. Sample the five model values for all rows under the corrected names;
-   outside-raster or invalid coordinates yield NaN.
+   outside-raster samples, nodata sentinels (e.g. -32767), and invalid
+   coordinates all yield NaN. (The legacy index baked nodata sentinels into
+   its model columns for out-of-raster points; the rebuild fixes this.)
 5. Assemble the 37 columns and write atomically (temp file + `os.replace`).
 
 Guards — fail loudly with the violated invariant named, exit non-zero,
@@ -265,7 +267,13 @@ One-time, in order. Work branches from `feat/cpt-supplemental-consolidation`.
    change yet.
 3. Seed `nzgd_id_to_location.csv.gz` from the old index via
    `nzgd/scripts/metadata/one_time/seed_location_sidecar_from_legacy_index.py`
-   (kept in git for provenance).
+   (kept in git for provenance). The script reports any row whose
+   coordinates fall outside the NZ bounding box yet carries a real
+   classification, for case-by-case review — blanket invalidation could
+   clobber legitimate manual classifications (e.g. 8753, a plausible
+   latitude sign typo). One known correction is applied: 229630 (an
+   upstream test record at 12.123/34.123) is seeded `unclassified` instead
+   of the legacy index's erroneous Canterbury/Casebrook values.
 4. Run the build, producing `nzgd_index.csv.gz`.
 5. Run the verification script (below); review its report.
 6. Flip the config line; apply the consumer edits and renames; run pytest.
@@ -294,8 +302,9 @@ checks compare the legacy index against the freshly built one:
 - For each differing ID, assert its archive directory exists under
   `nzgd_source_files_of_overwritten_nzgd_ids/` and contains a saved metadata
   row.
-- Location columns byte-identical for all old IDs (proves seeding fidelity,
-  including the manual batches).
+- Location columns byte-identical for all old IDs except the documented
+  seed-time correction (229630 → `unclassified`), proving seeding fidelity,
+  including the manual batches.
 - `nztm_*` values allclose to the old ones.
 - Model columns reported, not asserted equal: sampling is fresh, names are
   corrected, and the NLM columns are new.
@@ -346,9 +355,17 @@ history (`20933a0`) forever.
 
 ## Observations recorded, deliberately untouched
 
-- The catalog and index both carry junk `Type` values
-  (`Investigation Type`, `Investigation Type 2`) inherited from a pre-API
-  CSV concatenation; preservation policy keeps them.
+- The catalog and index both carry four NZGD-side test records (IDs 229615,
+  229617, 229625, 229630) with placeholder values throughout: `Type` of
+  `Investigation Type` / `Investigation Type 2`, `TypeDisplay` of
+  `TypeDisplay`/`TypeDisplay1`, coordinates 12.123/34.123 (Sudan), and
+  `EndDate` of `0001-01-01T00:00:00Z` (the .NET date default). They are
+  still Published upstream (created Feb 2025, touched June 2025), so they
+  are kept for mirror fidelity — a local deletion would be undone or
+  flagged by the next sync. They match no extraction filter and are absent
+  from the file catalog, so they are inert. A wider family of upstream test
+  records with valid-looking `Type` codes also exists (e.g. 229555 "Rodd's
+  Test Project", 229580, 229583, 229662–229664).
 - 229775's NZGD Files endpoint returns HTTP 500 and 229822 is absent from the
   file catalog; both are upstream NZGD conditions, not local defects.
 - DBs already on disk keep the old column names until their next versioned
