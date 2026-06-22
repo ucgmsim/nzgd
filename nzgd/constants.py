@@ -58,6 +58,10 @@ NLM_GW_STD_PATH = Path(CONFIG["nlm_gw_std_path"])
 # Path to Foster et al. (2019) Vs30 model GeoTIFF file
 FOSTER_2019_VS30_MODEL_PATH = Path(CONFIG["foster_2019_vs30_model_path"])
 
+# Paths to LINZ shapefiles for location classification
+DISTRICT_SHAPEFILE_PATH = Path(CONFIG["district_shapefile_path"])
+SUBURBS_SHAPEFILE_PATH = Path(CONFIG["suburbs_shapefile_path"])
+
 # Get relevant file extensions from the configuration file
 FILE_EXTENSIONS = CONFIG["file_extensions"]
 

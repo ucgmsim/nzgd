@@ -47,6 +47,10 @@ nlm_gw_std_path: "/home/arr65/data/national_liquefaction_model/NLM_files/v2025.0
 # Path to Foster et al. (2019) Vs30 model GeoTIFF file
 foster_2019_vs30_model_path: "/home/arr65/data/nzgd/resources/NSHM2022_NoG6G13/combined.tif"
 
+# Paths to LINZ shapefiles for region/district/city/suburb classification
+district_shapefile_path: "/home/arr65/data/nzgd/resources/shapefiles/lds-nz-land-districts-SHP_WGS84_EPSG_4326/nz-land-districts.shp"
+suburbs_shapefile_path: "/home/arr65/data/nzgd/resources/shapefiles/lds-nz-suburbs-and-localities-SHP_WGS84_EPSG_4326/nz-suburbs-and-localities.shp"
+
 cpt_column_name_descriptions:
   Depth: "depth in m"
   qc: "cone resistance (qc) in MPa"
