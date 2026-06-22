@@ -23,8 +23,7 @@ default_spt_efficiency_percent: 75.0
 default_borehole_diameter_mm: 150.0
 buffer_below_lowest_measurement_depth_m: 0.01 # buffer below the lowest measurement depth to ensure the lowest layer is within the lowest layer
 
-nzgd_index_file_name: "nzgd_metadata_from_coordinates_22_august_2025.csv"
-#nzgd_index_file_name: "only_127920_nzgd_metadata_from_coordinates_22_august_2025.csv"
+nzgd_index_file_name: "nzgd_index.csv.gz"
 
 nzgd_TypeDisplay_values_for_boreholes:
   - "Rotary Cored borehole"
