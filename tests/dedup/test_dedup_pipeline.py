@@ -32,9 +32,9 @@ def test_exact_duplicate_pair_is_merged(fresh_db: sqlite3.Connection) -> None:
              (0.20, 1.10, 0.011, 0.000),
              (0.30, 1.20, 0.012, 0.000)]
     add_cpt_record(fresh_db, nzgd_id=1, lat=-41.0, lon=174.0,
-                   investigation_name="Site A", investigation_date="2024-01-15")
+                   investigation_name="Site A", record_created_on="2024-01-15")
     add_cpt_record(fresh_db, nzgd_id=2, lat=-41.0, lon=174.0,
-                   investigation_name=None, investigation_date="2024-02-01")
+                   investigation_name=None, record_created_on="2024-02-01")
     add_cpt_report(fresh_db, cpt_id=10, nzgd_id=1, trace=trace)
     add_cpt_report(fresh_db, cpt_id=20, nzgd_id=2, trace=trace)
 
@@ -159,12 +159,12 @@ def test_partial_overlap_reparents_unique_reports(fresh_db: sqlite3.Connection) 
 
 def test_metadata_conflict_picks_one_and_records_conflict(fresh_db: sqlite3.Connection) -> None:
     trace = [(0.1, 1.0, 0.01, 0.0), (0.2, 1.1, 0.011, 0.0)]
-    # nzgd 1: NULL investigation_name, but set investigation_date so its non-null
+    # nzgd 1: NULL investigation_name, but set record_created_on so its non-null
     # metadata count matches the other two records (each has investigation_name).
     # All three then tie on tiebreaker 1; smallest nzgd_id picks nzgd 1 as canonical.
-    add_cpt_record(fresh_db, 1, investigation_name=None, investigation_date="2024-01-01")
-    add_cpt_record(fresh_db, 2, investigation_name="Foo", investigation_date=None)
-    add_cpt_record(fresh_db, 3, investigation_name="Bar", investigation_date=None)
+    add_cpt_record(fresh_db, 1, investigation_name=None, record_created_on="2024-01-01")
+    add_cpt_record(fresh_db, 2, investigation_name="Foo", record_created_on=None)
+    add_cpt_record(fresh_db, 3, investigation_name="Bar", record_created_on=None)
     add_cpt_report(fresh_db, 10, 1, trace)
     add_cpt_report(fresh_db, 20, 2, trace)
     add_cpt_report(fresh_db, 30, 3, trace)
@@ -269,8 +269,8 @@ def test_spt_with_string_blowcount_values_hashes_without_error(fresh_db: sqlite3
 def test_spt_fuzzy_pass_handles_string_blowcount_without_crash(fresh_db: sqlite3.Connection) -> None:
     """Real-data SPT records have string ISPT_REP values; fuzzy pass must not crash on them."""
     from nzgd.dedup.pass2_fuzzy import generate_fuzzy_merge_plan
-    add_bh_record(fresh_db, 1, lat=-41.0, lon=174.0, investigation_name="Site Alpha", investigation_date="2024-01-01")
-    add_bh_record(fresh_db, 2, lat=-41.0, lon=174.0001, investigation_name="Site Beta", investigation_date="2024-06-01")
+    add_bh_record(fresh_db, 1, lat=-41.0, lon=174.0, investigation_name="Site Alpha", record_created_on="2024-01-01")
+    add_bh_record(fresh_db, 2, lat=-41.0, lon=174.0001, investigation_name="Site Beta", record_created_on="2024-06-01")
     fresh_db.execute("INSERT INTO sptreport (spt_id, nzgd_id) VALUES (100, 1)")
     fresh_db.execute("INSERT INTO sptreport (spt_id, nzgd_id) VALUES (200, 2)")
     # ISPT_REP holds a string in both records; values DIFFER so the pair is not a real duplicate.

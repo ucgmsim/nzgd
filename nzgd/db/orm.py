@@ -176,13 +176,13 @@ class NZGDRecord(BaseModel):
     longitude = FloatField()
     """float: The longitude coordinate of the investigation location."""
 
-    model_vs30_foster_2019_km_per_s = FloatField(null=True)
+    model_vs30_foster_2019_m_per_s = FloatField(null=True)
     """float: The modelled Vs30 value from Foster et al. (2019), at this record's
-    location."""
+    location, in metres per second."""
 
-    model_vs30_stddev_foster_2019_km_per_s = FloatField(null=True)
-    """float: The modelled Vs30 standard deviation from Foster et al. (2019), at this
-    record's location."""
+    model_vs30_stddev_foster_2019_ln = FloatField(null=True)
+    """float: The modelled Vs30 standard deviation from Foster et al. (2019), at
+    this record's location, in natural-log units (dimensionless)."""
 
     model_gwl_westerhoff_2018_m = FloatField(null=True)
     """float: The modelled ground water level from Westerhoff et al. (2018), at this
@@ -199,11 +199,12 @@ class NZGDRecord(BaseModel):
     original_investigation_name = TextField(null=True)
     """str: The original reference for the record."""
 
-    investigation_date = DateField(formats=["%Y-%m-%d"], null=True)
-    """date: The date the investigation was conducted."""
+    record_created_on = DateField(formats=["%Y-%m-%d"], null=True)
+    """date: When the record was created in NZGD (NZGD CreatedOn). Not the
+    investigation date: NZGD stores that, sparsely, in EndDate."""
 
-    published_date = DateField(formats=["%Y-%m-%d"], null=True)
-    """date: The date the record was published."""
+    record_last_modified_on = DateField(formats=["%Y-%m-%d"], null=True)
+    """date: When the record was last modified in NZGD (NZGD LastModifiedOn)."""
 
     region_id = ForeignKeyField(Region, backref="region")
     """int: The foreign key referencing the region."""
@@ -221,7 +222,7 @@ class NZGDRecord(BaseModel):
         indexes = (
             # (column, ), (boolean for is unique, )
             (("nzgd_id",), True),
-            (("model_vs30_foster_2019_km_per_s",), False),
+            (("model_vs30_foster_2019_m_per_s",), False),
             (("model_gwl_westerhoff_2018_m",), False),
             (("model_gwl_nlm_2025_m",), False),
             (("model_gwl_nlm_2025_stddev_m",), False),

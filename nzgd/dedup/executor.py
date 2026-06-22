@@ -13,9 +13,9 @@ from nzgd.dedup.plausibility import is_useful_value
 
 _NZGDRECORD_METADATA_COLUMNS = (
     "type_id", "latitude", "longitude",
-    "model_vs30_foster_2019_km_per_s", "model_vs30_stddev_foster_2019_km_per_s",
+    "model_vs30_foster_2019_m_per_s", "model_vs30_stddev_foster_2019_ln",
     "model_gwl_westerhoff_2018_m", "model_gwl_nlm_2025_m", "model_gwl_nlm_2025_stddev_m",
-    "original_investigation_name", "investigation_date", "published_date",
+    "original_investigation_name", "record_created_on", "record_last_modified_on",
     "region_id", "district_id", "city_id", "suburb_id",
 )
 

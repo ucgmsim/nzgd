@@ -30,7 +30,7 @@ def _load_active_records(
     type_id = 1 if table_cfg.record_type == "CPT" else 2
     cur = conn.cursor()
     cur.execute(
-        "SELECT n.nzgd_id, n.latitude, n.longitude, n.investigation_date, "
+        "SELECT n.nzgd_id, n.latitude, n.longitude, n.record_created_on, "
         "n.original_investigation_name "
         "FROM nzgdrecord n "
         f"WHERE n.merged_into_nzgd_id IS NULL AND n.type_id = ? "

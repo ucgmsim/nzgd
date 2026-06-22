@@ -247,8 +247,8 @@ deduplication:
     nzgdrecord:
       latitude:                                  [-47.5, -33.5]
       longitude:                                 [165.0, 180.0]
-      model_vs30_foster_2019_km_per_s:           [50.0, 2000.0]
-      model_vs30_stddev_foster_2019_km_per_s:    [0.0, 10.0]
+      model_vs30_foster_2019_m_per_s:            [50.0, 2000.0]
+      model_vs30_stddev_foster_2019_ln:          [0.0, 10.0]
       model_gwl_westerhoff_2018_m:               [0.0, 100.0]
       model_gwl_nlm_2025_m:                      [0.0, 100.0]
       model_gwl_nlm_2025_stddev_m:               [0.0, 100.0]

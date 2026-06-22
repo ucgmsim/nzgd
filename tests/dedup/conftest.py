@@ -15,14 +15,14 @@ CREATE TABLE nzgdrecord (
     type_id INTEGER NOT NULL,
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
-    model_vs30_foster_2019_km_per_s REAL,
-    model_vs30_stddev_foster_2019_km_per_s REAL,
+    model_vs30_foster_2019_m_per_s REAL,
+    model_vs30_stddev_foster_2019_ln REAL,
     model_gwl_westerhoff_2018_m REAL,
     model_gwl_nlm_2025_m REAL,
     model_gwl_nlm_2025_stddev_m REAL,
     original_investigation_name TEXT,
-    investigation_date TEXT,
-    published_date TEXT,
+    record_created_on TEXT,
+    record_last_modified_on TEXT,
     region_id INTEGER NOT NULL DEFAULT 0,
     district_id INTEGER NOT NULL DEFAULT 0,
     city_id INTEGER NOT NULL DEFAULT 0,
@@ -140,12 +140,12 @@ def add_cpt_record(
     lat: float = -41.0,
     lon: float = 174.0,
     investigation_name: str | None = None,
-    investigation_date: str | None = None,
+    record_created_on: str | None = None,
 ) -> None:
     conn.execute(
         "INSERT INTO nzgdrecord (nzgd_id, type_id, latitude, longitude, "
-        "original_investigation_name, investigation_date) VALUES (?,1,?,?,?,?)",
-        (nzgd_id, lat, lon, investigation_name, investigation_date),
+        "original_investigation_name, record_created_on) VALUES (?,1,?,?,?,?)",
+        (nzgd_id, lat, lon, investigation_name, record_created_on),
     )
 
 
@@ -155,12 +155,12 @@ def add_bh_record(
     lat: float = -41.0,
     lon: float = 174.0,
     investigation_name: str | None = None,
-    investigation_date: str | None = None,
+    record_created_on: str | None = None,
 ) -> None:
     conn.execute(
         "INSERT INTO nzgdrecord (nzgd_id, type_id, latitude, longitude, "
-        "original_investigation_name, investigation_date) VALUES (?,2,?,?,?,?)",
-        (nzgd_id, lat, lon, investigation_name, investigation_date),
+        "original_investigation_name, record_created_on) VALUES (?,2,?,?,?,?)",
+        (nzgd_id, lat, lon, investigation_name, record_created_on),
     )
 
 
