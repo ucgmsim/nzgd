@@ -195,11 +195,6 @@ pyrightconfig.json
 # Temporary/scratch analysis area
 nzgd/scripts/temp/
 
-# Large data resources (too big for git)
-nzgd/resources/nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl.csv
-nzgd/resources/nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl.csv.gz
-nzgd/resources/nzgd_id_to_region.csv
-
 # Transient NZGD catalog backup/intermediate artifacts
 nzgd/resources/nzgd_catalogs_from_api/*.pre-swap-*
 nzgd/resources/nzgd_catalogs_from_api/*.bak-*
