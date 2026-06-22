@@ -10,6 +10,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-11-regenerated-nzgd-index-design.md` (read it first).
 
+> **As-built note (executed 2026-06-22 on branch `feat/regenerated-nzgd-index`).**
+> Two reviewed deviations from the code listings below:
+> 1. **Task 6** — the seed's `KNOWN_CORRECTIONS` blanks **both 229630 and 229545**
+>    to `unclassified`. 229545 is a 0,0 null-island CPT test record
+>    (`ISAB-124bbbf444`) with a fabricated Dunsandel classification, surfaced by
+>    the out-of-bbox report and confirmed by the user; 8753 (a real record with
+>    corrupted coordinates but a plausible classification) was deliberately
+>    preserved. Commit `5a66c68`.
+> 2. **Task 7** — the verification uses `SEED_CORRECTED_IDS = {229630, 229545}`,
+>    and **Check 5 (NZTM allclose) excludes `KNOWN_DIVERGENT_IDS`** so reassigned
+>    IDs (229775, 229822), whose upstream coordinates changed to 0,0, don't trip
+>    it. The Check 5 listing below predates that fix. Commit `1f02f7c`.
+
 ---
 
 ## Context for the implementer
