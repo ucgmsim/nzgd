@@ -32,24 +32,16 @@ except ImportError:
         return iter(iterable)
 
 
-nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df = pd.read_csv(
-    constants.RESOURCE_PATH
-    / "nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl.csv.gz",
-    compression="gzip",
-)
-nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df = (
-    nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df.rename(
-        columns={
-            "State": "availability_status",
-            "InvestigationId": "original_investigation_name",
-            "Latitude": "latitude",
-            "Longitude": "longitude",
-            "CreatedOn": "investigation_date",
-            "LastModifiedOn": "published_date",
-            "nlm_gwl_m": "model_gwl_nlm_2025_m",
-            "nlm_gwl_stddev_m": "model_gwl_nlm_2025_stddev_m",
-        }
-    )
+nzgd_index_df = pd.read_csv(constants.INDEX_FILE_PATH, low_memory=False)
+nzgd_index_df = nzgd_index_df.rename(
+    columns={
+        "State": "availability_status",
+        "InvestigationId": "original_investigation_name",
+        "Latitude": "latitude",
+        "Longitude": "longitude",
+        "CreatedOn": "record_created_on",
+        "LastModifiedOn": "record_last_modified_on",
+    }
 )
 
 
@@ -74,14 +66,14 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
             cr.source_file,
             nz.latitude,
             nz.longitude,
-            nz.model_vs30_foster_2019_km_per_s,
-            nz.model_vs30_stddev_foster_2019_km_per_s,
+            nz.model_vs30_foster_2019_m_per_s,
+            nz.model_vs30_stddev_foster_2019_ln,
             nz.model_gwl_westerhoff_2018_m,
             nz.model_gwl_nlm_2025_m,
             nz.model_gwl_nlm_2025_stddev_m,
             nz.original_investigation_name,
-            nz.investigation_date,
-            nz.published_date,
+            nz.record_created_on,
+            nz.record_last_modified_on,
             r.value AS region_name,
             d.value AS district_name,
             c.value AS city_name,
@@ -110,14 +102,14 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
             sr.*,
             nz.latitude,
             nz.longitude,
-            nz.model_vs30_foster_2019_km_per_s,
-            nz.model_vs30_stddev_foster_2019_km_per_s,
+            nz.model_vs30_foster_2019_m_per_s,
+            nz.model_vs30_stddev_foster_2019_ln,
             nz.model_gwl_westerhoff_2018_m,
             nz.model_gwl_nlm_2025_m,
             nz.model_gwl_nlm_2025_stddev_m,
             nz.original_investigation_name,
-            nz.investigation_date,
-            nz.published_date,
+            nz.record_created_on,
+            nz.record_last_modified_on,
             r.value AS region_name,
             d.value AS district_name,
             c.value AS city_name,
@@ -257,13 +249,13 @@ db_columns = set(metadata_summary_from_db_df.columns)
 # Preserve the order from the original DataFrame
 columns_not_in_db = [
     col
-    for col in nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df.columns
+    for col in nzgd_index_df.columns
     if col not in db_columns
 ]
 # Always include nzgd_id first, then other columns in their original order
 columns_to_select = ["nzgd_id"] + [col for col in columns_not_in_db if col != "nzgd_id"]
 nzgd_metadata_additional_columns_df = (
-    nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df[
+    nzgd_index_df[
         columns_to_select
     ].copy()
 )
@@ -275,8 +267,8 @@ all_metadata_for_records_in_db_df = metadata_summary_from_db_df.merge(
 
 nzgd_ids_in_db = set(all_metadata_for_records_in_db_df["nzgd_id"])
 nzgd_metadata_not_in_db_df = (
-    nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df[
-        ~nzgd_metadata_for_past_and_current_nzgd_investigations_with_nlm_gwl_df[
+    nzgd_index_df[
+        ~nzgd_index_df[
             "nzgd_id"
         ].isin(nzgd_ids_in_db)
     ].copy()
