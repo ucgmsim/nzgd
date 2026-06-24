@@ -4,14 +4,14 @@ See https://open-geotechnical.github.io/unofficial-ags4-data-dict/group/WSTG.htm
 """
 
 import enum
-from pathlib import Path
 
 import natsort
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from nzgd_data_extraction import info
+from nzgd import constants
+from nzgd.extract.cpt import info
 
 
 class NewSectionStartFlag(enum.StrEnum):
@@ -21,7 +21,10 @@ class NewSectionStartFlag(enum.StrEnum):
     double_quote_group = '"GROUP",'
 
 
-def get_ground_water_levels(new_section_start_flag, ags_content):
+def get_ground_water_levels(
+    new_section_start_flag: NewSectionStartFlag,
+    ags_content: str,
+) -> list[float]:
     """Extract the ground water levels from the WSTG section of an AGS file.
 
     Parameters
@@ -89,56 +92,71 @@ def get_ground_water_levels(new_section_start_flag, ags_content):
     return wstg_dpth_values
 
 
-ags_files = natsort.natsorted(
-    Path(
-        "/home/arr65/data/nzgd/downloads_and_metadata/unorganised_raw_from_nzgd/borehole",
-    ).rglob("*.ags"),
-)
-
-unknown_file_type = []
-results = []
-
-for ags_file in tqdm(ags_files):
-    ground_water_levels_for_file = []
-
-    encoding = info.find_encoding(ags_file)
-
-    with open(ags_file, encoding=encoding) as f:
-        content = f.read()
-    type = None
-
-    if NewSectionStartFlag.double_asterix in content:
-        ground_water_levels_for_file.extend(
-            get_ground_water_levels(NewSectionStartFlag.double_asterix, content),
+if __name__ == "__main__":
+    ### Borehole records are identified from the NZGD index by TypeDisplay, then each
+    ### record's source-file directory is searched for .ags files (same approach as
+    ### extract_spt.py). The previous hard-coded "unorganised_raw_from_nzgd/borehole"
+    ### directory no longer exists after the source data was reorganised by NZGD ID.
+    ### Borehole .ags files whose NZGD ID is absent from the index are skipped by design
+    ### (the index is the source of truth for which records to process).
+    nzgd_index_df = pd.read_csv(constants.INDEX_FILE_PATH, low_memory=False)
+    borehole_index_df = nzgd_index_df[
+        nzgd_index_df["TypeDisplay"].isin(
+            constants.NZGD_TypeDisplay_VALUES_FOR_BOREHOLES,
         )
-        type = NewSectionStartFlag.double_asterix
-    elif NewSectionStartFlag.double_quote_group in content:
-        ground_water_levels_for_file.extend(
-            get_ground_water_levels(NewSectionStartFlag.double_quote_group, content),
-        )
-        type = NewSectionStartFlag.double_quote_group
-    else:
-        unknown_file_type.append(ags_file)
+    ]
 
-    df_from_file = pd.DataFrame(
-        {
-            "file_name": ags_file.name,
-            "type": type.value,
-            "median_water_strike_depth": None,
-            "water_strike_depths": None,
-        },
-        index=[0],
+    ags_files = []
+    for nzgd_id in borehole_index_df["nzgd_id"]:
+        for source_file in (constants.NZGD_SOURCE_DATA_DIR / str(nzgd_id)).glob("*"):
+            if source_file.suffix.lower() == ".ags":
+                ags_files.append(source_file)
+    ags_files = natsort.natsorted(ags_files)
+
+    unknown_file_type = []
+    results = []
+
+    for ags_file in tqdm(ags_files):
+        ground_water_levels_for_file = []
+
+        encoding = info.find_encoding(ags_file)
+
+        with open(ags_file, encoding=encoding) as f:
+            content = f.read()
+        file_type = None
+
+        if NewSectionStartFlag.double_asterix in content:
+            ground_water_levels_for_file.extend(
+                get_ground_water_levels(NewSectionStartFlag.double_asterix, content),
+            )
+            file_type = NewSectionStartFlag.double_asterix
+        elif NewSectionStartFlag.double_quote_group in content:
+            ground_water_levels_for_file.extend(
+                get_ground_water_levels(NewSectionStartFlag.double_quote_group, content),
+            )
+            file_type = NewSectionStartFlag.double_quote_group
+        else:
+            unknown_file_type.append(ags_file)
+
+        df_from_file = pd.DataFrame(
+            {
+                "file_name": ags_file.name,
+                "type": file_type.value if file_type is not None else None,
+                "median_water_strike_depth": None,
+                "water_strike_depths": None,
+            },
+            index=[0],
+        )
+
+        if len(ground_water_levels_for_file) > 0:
+            df_from_file.at[0, "median_water_strike_depth"] = np.median(
+                ground_water_levels_for_file,
+            )
+            df_from_file.at[0, "water_strike_depths"] = ground_water_levels_for_file
+
+        results.append(df_from_file)
+
+    results_df = pd.concat(results, ignore_index=True)
+    results_df.to_parquet(
+        "/home/arr65/data/nzgd/extracted_single_values/borehole_extracted_ground_water_levels.parquet",
     )
-
-    if len(ground_water_levels_for_file) > 0:
-        df_from_file.at[0, "median_water_strike_depth"] = np.median(
-            ground_water_levels_for_file,
-        )
-        df_from_file.at[0, "water_strike_depths"] = ground_water_levels_for_file
-
-    results.append(df_from_file)
-
-results_df = pd.concat(results, ignore_index=True)
-results_df.to_parquet(
-    "/home/arr65/data/nzgd/extracted_single_values/borehole_extracted_ground_water_levels.parquet",
-)
