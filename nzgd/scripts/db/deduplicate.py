@@ -1,7 +1,31 @@
-"""CLI entry point for cross-record CPT/SPT deduplication.
+r"""CLI entry point for cross-record CPT/SPT deduplication.
 
-Copies a source NZGD SQLite DB to a target path, then applies hash and fuzzy
-deduplication passes to the copy. The source DB is never modified.
+Copies a source NZGD SQLite DB to a target path, then applies the deduplication
+passes to the copy: within-record consolidation (Pass 0), bit-exact hash
+matching (Pass 1), and metadata-blocked fuzzy matching (Pass 2), followed by
+supplemental consolidation. The deduped DB and CSV reports are written to the
+target's directory. The source DB is never modified.
+
+Run as a module from the repository root, using the project virtualenv.
+
+Examples
+--------
+Deduplicate a database, writing the result to ``<source>_deduped.db`` next to
+the source::
+
+    python -m nzgd.scripts.db.deduplicate \
+        --source /home/arr65/data/nzgd/dev_extracted_cpt_and_scpt_data/uc_nzgd_v0p6p0_20260403.db
+
+Write the deduped DB to an explicit path::
+
+    python -m nzgd.scripts.db.deduplicate \
+        --source /path/to/source.db \
+        --target /path/to/output_deduped.db
+
+Deduplicate only CPT records, skipping SPT/borehole records::
+
+    python -m nzgd.scripts.db.deduplicate \
+        --source /path/to/source.db --skip-spt
 """
 
 import csv
@@ -9,7 +33,6 @@ import json
 import shutil
 import sqlite3
 import subprocess
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,17 +53,24 @@ from nzgd.dedup.reports import (
     write_failures_report,
     write_supplemental_consolidation_report,
 )
+from nzgd.dedup.schema import apply_dedup_schema
 from nzgd.dedup.supplemental_consolidation import (
     consolidate_within_record_supplemental,
 )
-from nzgd.dedup.schema import apply_dedup_schema
 from nzgd.dedup.verify import find_spt_format_orphans
-
 
 app = typer.Typer(help=__doc__)
 
 
 def _script_version() -> str:
+    """Return the current git commit hash for provenance, or ``"unknown"``.
+
+    Returns
+    -------
+    str
+        The full HEAD commit hash of the repository containing this script, or
+        ``"unknown"`` if git is unavailable or the command fails.
+    """
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False,
@@ -48,7 +78,7 @@ def _script_version() -> str:
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except Exception:
+    except OSError:
         pass
     return "unknown"
 
@@ -60,7 +90,27 @@ def main(
     skip_cpt: bool = typer.Option(False, "--skip-cpt", help="Skip CPT deduplication."),
     skip_spt: bool = typer.Option(False, "--skip-spt", help="Skip SPT deduplication."),
 ) -> None:
-    """Run the dedup pipeline against `source`, producing a deduped DB at `target`."""
+    """Run the dedup pipeline against ``source``, producing a deduped DB at ``target``.
+
+    Copies ``source`` to ``target`` and applies the deduplication passes to the
+    copy (within-record consolidation, hash matching, fuzzy matching, then
+    supplemental consolidation), writing the deduped DB and CSV reports to the
+    target's directory. A read-only post-run check confirms no cross-record SPT
+    merge dropped the only copy of an AGS/PDF format. The source DB is never
+    modified.
+
+    Parameters
+    ----------
+    source
+        Path to the source NZGD SQLite DB. Opened read-only; never modified.
+    target
+        Path for the deduped output DB. Defaults to ``<source>_deduped.db``
+        next to the source. Refuses to overwrite an existing file.
+    skip_cpt
+        If True, skip deduplication of CPT records.
+    skip_spt
+        If True, skip deduplication of SPT (borehole) records.
+    """
     if target is None:
         suffix = constants.DEDUP_CONFIG["output"]["deduped_db_suffix"]
         target = source.with_name(source.stem + suffix + ".db")
