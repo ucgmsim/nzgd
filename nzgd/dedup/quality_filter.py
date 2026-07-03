@@ -198,8 +198,9 @@ def delete_emptied_records(
         cur.execute(f"SAVEPOINT {savepoint}")
         try:
             n_reports = cur.execute(
-                "SELECT COUNT(*) FROM quality_reject WHERE run_id = ? AND nzgd_id = ?",
-                (run_id, nzgd_id),
+                "SELECT COUNT(*) FROM quality_reject "
+                "WHERE run_id = ? AND record_type = ? AND nzgd_id = ?",
+                (run_id, table_cfg.record_type, nzgd_id),
             ).fetchone()[0]
             cur.execute("DELETE FROM nzgdrecord WHERE nzgd_id = ?", (nzgd_id,))
             cur.execute(

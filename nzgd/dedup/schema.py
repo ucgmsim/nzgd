@@ -168,12 +168,12 @@ def _migrate_widen_audit_check_supplemental(conn: sqlite3.Connection) -> None:
 def apply_dedup_schema(conn: sqlite3.Connection) -> None:
     """Apply dedup-specific schema additions to a deduped target DB.
 
-    Adds `nzgdrecord.merged_into_nzgd_id`, creates `dedup_run`,
-    `dedup_audit`, and `quality_reject` tables, and creates supporting
-    indexes. Idempotent: if a
-    second invocation runs against an already-migrated DB, the ALTER TABLE
-    will fail with "duplicate column"; the function catches that case and
-    proceeds. All other DDL is `IF NOT EXISTS`.
+    Adds `nzgdrecord.merged_into_nzgd_id`, creates the `dedup_run`,
+    `dedup_audit`, `quality_reject`, and `quality_reject_record` tables, and
+    creates supporting indexes. Idempotent: if a second invocation runs against
+    an already-migrated DB, the ALTER TABLE will fail with "duplicate column";
+    the function catches that case and proceeds. All other DDL is
+    `IF NOT EXISTS`.
 
     Foreign-key enforcement requires `PRAGMA foreign_keys = ON` on the
     connection; callers should issue that before invoking this function.
