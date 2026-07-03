@@ -48,8 +48,8 @@ nzgd_index_df = nzgd_index_df.rename(
 print("Loading data from database...")
 with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
     print("  Loading cptreport data...")
-    my_extractions_df = pd.read_sql_query("SELECT * FROM cptreport", db)
-    print(f"    Loaded {len(my_extractions_df)} CPT reports")
+    cpt_report_count = db.execute("SELECT COUNT(*) FROM cptreport").fetchone()[0]
+    print(f"    Loaded {cpt_report_count} CPT reports")
 
     print("  Loading CPT metadata summary...")
     cpt_metadata_summary_df = pd.read_sql_query(
