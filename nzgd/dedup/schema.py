@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS quality_reject (
 _INDEX_QUALITY_REJECT_RUN = "CREATE INDEX IF NOT EXISTS idx_quality_reject_run ON quality_reject(run_id)"
 _INDEX_QUALITY_REJECT_NZGD = "CREATE INDEX IF NOT EXISTS idx_quality_reject_nzgd_id ON quality_reject(nzgd_id)"
 
+_CREATE_QUALITY_REJECT_RECORD = """
+CREATE TABLE IF NOT EXISTS quality_reject_record (
+    reject_record_id     INTEGER PRIMARY KEY,
+    run_id               INTEGER NOT NULL REFERENCES dedup_run(run_id),
+    record_type          TEXT NOT NULL,
+    nzgd_id              INTEGER NOT NULL,
+    reason               TEXT NOT NULL,
+    n_reports_discarded  INTEGER NOT NULL,
+    deleted_at           TEXT NOT NULL
+)
+"""
+
+_INDEX_QUALITY_REJECT_RECORD_RUN = "CREATE INDEX IF NOT EXISTS idx_quality_reject_record_run ON quality_reject_record(run_id)"
+
 _DROP_CPT_DATA_DUPLICATE_COLUMN = (
     "ALTER TABLE cptreport DROP COLUMN cpt_data_duplicate_of_cpt_id"
 )
@@ -195,4 +209,6 @@ def apply_dedup_schema(conn: sqlite3.Connection) -> None:
     cur.execute(_CREATE_QUALITY_REJECT)
     cur.execute(_INDEX_QUALITY_REJECT_RUN)
     cur.execute(_INDEX_QUALITY_REJECT_NZGD)
+    cur.execute(_CREATE_QUALITY_REJECT_RECORD)
+    cur.execute(_INDEX_QUALITY_REJECT_RECORD_RUN)
     conn.commit()
