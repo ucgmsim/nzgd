@@ -188,3 +188,33 @@ def test_quality_filter_runs_in_full_pipeline(tmp_path: Path) -> None:
     finally:
         out.close()
     assert (tmp_path / "quality_filter_report.csv").exists()
+
+
+def test_emptied_record_deleted_in_full_pipeline(tmp_path: Path) -> None:
+    src = tmp_path / "source.db"
+    conn = _make_fresh_db(src)
+    # normal record -> survives with its report
+    add_cpt_record(conn, nzgd_id=1, lat=-41.0, lon=174.0)
+    add_cpt_report(conn, 10, 1, [(0.1, 1.0, 0.010, 0.05),
+                                 (0.2, 1.1, 0.011, 0.06),
+                                 (0.3, 1.2, 0.012, 0.07)])
+    # single-report record with a constant-u2 trace -> report discarded AND record deleted
+    add_cpt_record(conn, nzgd_id=2, lat=-41.0, lon=174.0)
+    add_cpt_report(conn, 20, 2, [(0.1, 1.0, 0.010, 0.0),
+                                 (0.2, 1.1, 0.011, 0.0),
+                                 (0.3, 1.2, 0.012, 0.0)])
+    conn.commit()
+    conn.close()
+
+    target = tmp_path / "deduped.db"
+    result = CliRunner().invoke(app, ["--source", str(src), "--target", str(target), "--skip-spt"])
+    assert result.exit_code == 0, result.output
+
+    out = sqlite3.connect(target)
+    try:
+        assert [r[0] for r in out.execute("SELECT cpt_id FROM cptreport ORDER BY cpt_id")] == [10]
+        assert [r[0] for r in out.execute("SELECT nzgd_id FROM nzgdrecord ORDER BY nzgd_id")] == [1]
+        assert out.execute("SELECT nzgd_id, record_type FROM quality_reject_record").fetchall() == [(2, "CPT")]
+    finally:
+        out.close()
+    assert (tmp_path / "quality_reject_record_report.csv").exists()

@@ -227,6 +227,7 @@ deduplication:
     failures_filename: "dedup_failures.csv"
     supplemental_consolidation_report_filename: "supplemental_consolidation_report.csv"
     quality_filter_report_filename: "quality_filter_report.csv"
+    quality_reject_record_report_filename: "quality_reject_record_report.csv"
 
   within_record_supplemental:
     small_spread_threshold:

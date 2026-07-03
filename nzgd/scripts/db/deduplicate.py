@@ -49,6 +49,7 @@ from nzgd.dedup.pass1_hash import generate_hash_merge_plan
 from nzgd.dedup.pass2_fuzzy import generate_fuzzy_merge_plan
 from nzgd.dedup.quality_filter import (
     apply_quality_filter,
+    delete_emptied_records,
     find_constant_column_reports,
 )
 from nzgd.dedup.reports import (
@@ -56,6 +57,7 @@ from nzgd.dedup.reports import (
     write_dedup_report,
     write_failures_report,
     write_quality_filter_report,
+    write_quality_reject_record_report,
     write_supplemental_consolidation_report,
 )
 from nzgd.dedup.schema import apply_dedup_schema
@@ -172,6 +174,8 @@ def main(
             )
             n_qf = apply_quality_filter(conn, qf_entries, run_id, cfg, failures=all_failures)
             typer.echo(f"[{cfg.record_type}] Quality filter: discarded {n_qf} reports.")
+            n_emptied = delete_emptied_records(conn, run_id, cfg, failures=all_failures)
+            typer.echo(f"[{cfg.record_type}] Quality filter: deleted {n_emptied} emptied records.")
         if cfg.record_type in within_enabled:
             typer.echo(f"[{cfg.record_type}] Pass 0: within-record consolidation ...")
             pass0_thresholds = {
@@ -232,6 +236,10 @@ def main(
     qf_report_path = out_dir / constants.DEDUP_CONFIG["output"]["quality_filter_report_filename"]
     write_quality_filter_report(conn, run_id, qf_report_path)
     typer.echo(f"Quality filter report at {qf_report_path}.")
+
+    qrr_report_path = out_dir / constants.DEDUP_CONFIG["output"]["quality_reject_record_report_filename"]
+    write_quality_reject_record_report(conn, run_id, qrr_report_path)
+    typer.echo(f"Quality reject record report at {qrr_report_path}.")
 
     if all_failures:
         failures_path = out_dir / constants.DEDUP_CONFIG["output"]["failures_filename"]
