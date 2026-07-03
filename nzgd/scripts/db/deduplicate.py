@@ -100,12 +100,12 @@ def main(
 ) -> None:
     """Run the dedup pipeline against ``source``, producing a deduped DB at ``target``.
 
-    Copies ``source`` to ``target`` and applies the deduplication passes to the
-    copy (within-record consolidation, hash matching, fuzzy matching, then
-    supplemental consolidation), writing the deduped DB and CSV reports to the
-    target's directory. A read-only post-run check confirms no cross-record SPT
-    merge dropped the only copy of an AGS/PDF format. The source DB is never
-    modified.
+    Copies ``source`` to ``target`` and applies, to the copy, the constant-column
+    quality filter followed by the deduplication passes (quality filter,
+    within-record consolidation, hash matching, fuzzy matching, then supplemental
+    consolidation), writing the deduped DB and CSV reports to the target's
+    directory. A read-only post-run check confirms no cross-record SPT merge
+    dropped the only copy of an AGS/PDF format. The source DB is never modified.
 
     Parameters
     ----------
