@@ -47,10 +47,15 @@ from nzgd.dedup.pass0_within_record import (
 )
 from nzgd.dedup.pass1_hash import generate_hash_merge_plan
 from nzgd.dedup.pass2_fuzzy import generate_fuzzy_merge_plan
+from nzgd.dedup.quality_filter import (
+    apply_quality_filter,
+    find_constant_column_reports,
+)
 from nzgd.dedup.reports import (
     write_calibration_report,
     write_dedup_report,
     write_failures_report,
+    write_quality_filter_report,
     write_supplemental_consolidation_report,
 )
 from nzgd.dedup.schema import apply_dedup_schema
@@ -89,6 +94,9 @@ def main(
     target: Path = typer.Option(None, "--target", help="Target deduped DB path. Defaults to '<source>_deduped.db'."),
     skip_cpt: bool = typer.Option(False, "--skip-cpt", help="Skip CPT deduplication."),
     skip_spt: bool = typer.Option(False, "--skip-spt", help="Skip SPT deduplication."),
+    skip_quality_filter: bool = typer.Option(
+        False, "--skip-quality-filter", help="Skip the constant-column quality filter."
+    ),
 ) -> None:
     """Run the dedup pipeline against ``source``, producing a deduped DB at ``target``.
 
@@ -110,6 +118,8 @@ def main(
         If True, skip deduplication of CPT records.
     skip_spt
         If True, skip deduplication of SPT (borehole) records.
+    skip_quality_filter
+        If True, skip the constant-column quality filter for all record types.
     """
     if target is None:
         suffix = constants.DEDUP_CONFIG["output"]["deduped_db_suffix"]
@@ -147,10 +157,21 @@ def main(
     within_enabled = set(
         constants.DEDUP_CONFIG.get("within_record", {}).get("enabled_record_types", ["CPT", "BH"])
     )
+    qf_cfg = constants.DEDUP_CONFIG.get("quality_filter", {})
+    qf_enabled = set(qf_cfg.get("enabled_record_types", []))
+    qf_columns = qf_cfg.get("constant_columns", {})
+    qf_min_rows = qf_cfg.get("min_non_null_rows", 3)
     for cfg, skip in ((CPT_TABLE_CONFIG, skip_cpt), (SPT_TABLE_CONFIG, skip_spt)):
         if skip:
             typer.echo(f"Skipping {cfg.record_type} per CLI flag.")
             continue
+        if not skip_quality_filter and cfg.record_type in qf_enabled:
+            typer.echo(f"[{cfg.record_type}] Quality filter: discarding constant-column reports ...")
+            qf_entries = find_constant_column_reports(
+                conn, cfg, qf_columns.get(cfg.record_type, []), qf_min_rows
+            )
+            n_qf = apply_quality_filter(conn, qf_entries, run_id, cfg, failures=all_failures)
+            typer.echo(f"[{cfg.record_type}] Quality filter: discarded {n_qf} reports.")
         if cfg.record_type in within_enabled:
             typer.echo(f"[{cfg.record_type}] Pass 0: within-record consolidation ...")
             pass0_thresholds = {
@@ -207,6 +228,10 @@ def main(
     supp_report_path = out_dir / constants.DEDUP_CONFIG["output"]["supplemental_consolidation_report_filename"]
     write_supplemental_consolidation_report(conn, run_id, supp_report_path)
     typer.echo(f"Supplemental consolidation report at {supp_report_path}.")
+
+    qf_report_path = out_dir / constants.DEDUP_CONFIG["output"]["quality_filter_report_filename"]
+    write_quality_filter_report(conn, run_id, qf_report_path)
+    typer.echo(f"Quality filter report at {qf_report_path}.")
 
     if all_failures:
         failures_path = out_dir / constants.DEDUP_CONFIG["output"]["failures_filename"]

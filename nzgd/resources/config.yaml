@@ -226,6 +226,7 @@ deduplication:
     calibration_report_filename: "calibration_report.csv"
     failures_filename: "dedup_failures.csv"
     supplemental_consolidation_report_filename: "supplemental_consolidation_report.csv"
+    quality_filter_report_filename: "quality_filter_report.csv"
 
   within_record_supplemental:
     small_spread_threshold:
@@ -241,6 +242,13 @@ deduplication:
     # which would merge AGS and PDF copies of the same borehole — not what
     # we want.
     enabled_record_types: ["CPT"]
+
+  quality_filter:
+    # Discard any report with a single constant value in one of these columns.
+    enabled_record_types: ["CPT"]
+    constant_columns:
+      CPT: ["depth_m", "qc_MPa", "fs_MPa", "u2_MPa"]
+    min_non_null_rows: 3
 
   field_plausibility_ranges:
     nzgdrecord:

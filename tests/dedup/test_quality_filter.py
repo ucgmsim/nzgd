@@ -5,12 +5,14 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from nzgd.dedup.data_types import CPT_TABLE_CONFIG
 from nzgd.dedup.quality_filter import apply_quality_filter, find_constant_column_reports
 from nzgd.dedup.reports import write_quality_filter_report
 from nzgd.dedup.schema import apply_dedup_schema
-from tests.dedup.conftest import add_cpt_record, add_cpt_report
+from nzgd.scripts.db.deduplicate import app
+from tests.dedup.conftest import _make_fresh_db, add_cpt_record, add_cpt_report
 
 _COLUMNS = ["depth_m", "qc_MPa", "fs_MPa", "u2_MPa"]
 
@@ -99,3 +101,36 @@ def test_apply_quality_filter_discards_and_audits(fresh_db: sqlite3.Connection, 
     text = out.read_text()
     assert "report_id" in text and "constant_columns" in text
     assert "u2_MPa" in text and "constant_column" in text
+
+
+def test_quality_filter_runs_in_full_pipeline(tmp_path: Path) -> None:
+    src = tmp_path / "source.db"
+    conn = _make_fresh_db(src)
+    add_cpt_record(conn, nzgd_id=1, lat=-41.0, lon=174.0)
+    add_cpt_record(conn, nzgd_id=2, lat=-41.0, lon=174.0)
+    # normal report -> survives
+    add_cpt_report(conn, 10, 1, [(0.1, 1.0, 0.010, 0.05),
+                                 (0.2, 1.1, 0.011, 0.06),
+                                 (0.3, 1.2, 0.012, 0.07)])
+    # constant-qc report -> discarded by the filter before any dedup pass
+    add_cpt_report(conn, 20, 2, [(0.1, 2.0, 0.010, 0.05),
+                                 (0.2, 2.0, 0.011, 0.06),
+                                 (0.3, 2.0, 0.012, 0.07)])
+    conn.commit()
+    conn.close()
+
+    target = tmp_path / "deduped.db"
+    result = CliRunner().invoke(
+        app, ["--source", str(src), "--target", str(target), "--skip-spt"]
+    )
+    assert result.exit_code == 0, result.output
+
+    out = sqlite3.connect(target)
+    try:
+        remaining = [r[0] for r in out.execute("SELECT cpt_id FROM cptreport ORDER BY cpt_id")]
+        assert remaining == [10]
+        rej = out.execute("SELECT report_id, record_type, reason FROM quality_reject").fetchall()
+        assert rej == [(20, "CPT", "constant_column")]
+    finally:
+        out.close()
+    assert (tmp_path / "quality_filter_report.csv").exists()
