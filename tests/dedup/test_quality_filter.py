@@ -1,11 +1,15 @@
 """Integration tests for the constant-column quality filter."""
 
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
 from nzgd.dedup.data_types import CPT_TABLE_CONFIG
-from nzgd.dedup.quality_filter import find_constant_column_reports
+from nzgd.dedup.quality_filter import apply_quality_filter, find_constant_column_reports
+from nzgd.dedup.reports import write_quality_filter_report
+from nzgd.dedup.schema import apply_dedup_schema
 from tests.dedup.conftest import add_cpt_record, add_cpt_report
 
 _COLUMNS = ["depth_m", "qc_MPa", "fs_MPa", "u2_MPa"]
@@ -50,3 +54,48 @@ def test_find_constant_column_reports(fresh_db: sqlite3.Connection) -> None:
 def test_invalid_column_raises(fresh_db: sqlite3.Connection) -> None:
     with pytest.raises(ValueError):
         find_constant_column_reports(fresh_db, CPT_TABLE_CONFIG, ["not_a_column"], 3)
+
+
+def _start_run(conn: sqlite3.Connection) -> int:
+    apply_dedup_schema(conn)
+    cur = conn.execute(
+        "INSERT INTO dedup_run (started_at, source_db_path, script_version, config_snapshot_json) "
+        "VALUES (?, ?, ?, ?)",
+        ("2026-07-03T00:00:00Z", ":memory:", "test", "{}"),
+    )
+    return cur.lastrowid
+
+
+def test_apply_quality_filter_discards_and_audits(fresh_db: sqlite3.Connection, tmp_path: Path) -> None:
+    _populate_scenarios(fresh_db)
+    run_id = _start_run(fresh_db)
+    failures: list[dict] = []
+    entries = find_constant_column_reports(fresh_db, CPT_TABLE_CONFIG, _COLUMNS, 3)
+    n = apply_quality_filter(fresh_db, entries, run_id, CPT_TABLE_CONFIG, failures=failures)
+
+    assert n == 3
+    assert failures == []
+    remaining = sorted(r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport"))
+    assert remaining == [10, 14]  # R1 and R5 kept; R2/R3/R4 discarded
+    gone = fresh_db.execute(
+        "SELECT COUNT(*) FROM cptmeasurements WHERE cpt_id IN (11, 12, 13)"
+    ).fetchone()[0]
+    assert gone == 0
+    kept = fresh_db.execute(
+        "SELECT COUNT(*) FROM cptmeasurements WHERE cpt_id = 10"
+    ).fetchone()[0]
+    assert kept == 3
+
+    rej = fresh_db.execute(
+        "SELECT report_id, reason, constant_columns_json, n_rows "
+        "FROM quality_reject ORDER BY report_id"
+    ).fetchall()
+    assert [r[0] for r in rej] == [11, 12, 13]
+    assert all(r[1] == "constant_column" for r in rej)
+    assert json.loads(rej[1][2]) == {"u2_MPa": 0.0}
+
+    out = tmp_path / "qf.csv"
+    write_quality_filter_report(fresh_db, run_id, out)
+    text = out.read_text()
+    assert "report_id" in text and "constant_columns" in text
+    assert "u2_MPa" in text and "constant_column" in text

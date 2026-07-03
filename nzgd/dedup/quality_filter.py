@@ -6,9 +6,12 @@ placeholder, so the whole report is discarded. This runs before the dedup passes
 so a flat report cannot be chosen as canonical or pollute fuzzy matching.
 """
 
+import json
 import sqlite3
+from datetime import datetime, timezone
 
 from nzgd.dedup.data_types import QualityRejectEntry, TableConfig
+from nzgd.dedup.executor import delete_report
 
 
 def find_constant_column_reports(
@@ -88,3 +91,60 @@ def find_constant_column_reports(
             )
         )
     return entries
+
+
+def apply_quality_filter(
+    conn: sqlite3.Connection,
+    entries: list[QualityRejectEntry],
+    run_id: int,
+    table_cfg: TableConfig,
+    failures: list[dict] | None = None,
+) -> int:
+    """Delete each report in `entries` and record it in `quality_reject`.
+
+    Each report is deleted in its own SAVEPOINT (via ``executor.delete_report``),
+    so one failure only rolls back that report. Failures are appended to
+    `failures` (shared with the dedup failures report). Returns the number of
+    reports successfully discarded.
+    """
+    if not entries:
+        return 0
+    cur = conn.cursor()
+    n_discarded = 0
+    for entry in entries:
+        savepoint = f"quality_reject_{entry.report_id}"
+        cur.execute(f"SAVEPOINT {savepoint}")
+        try:
+            delete_report(conn, entry.report_id, table_cfg)
+            cur.execute(
+                "INSERT INTO quality_reject (run_id, record_type, nzgd_id, report_id, "
+                "reason, constant_columns_json, n_rows, rejected_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    run_id,
+                    entry.record_type,
+                    entry.nzgd_id,
+                    entry.report_id,
+                    entry.reason,
+                    json.dumps(entry.constant_columns),
+                    entry.n_rows,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            n_discarded += 1
+        except Exception as exc:  # noqa: BLE001 — one bad report must not abort the rest
+            cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if failures is not None:
+                failures.append(
+                    {
+                        "cluster_id": None,
+                        "canonical_nzgd_id": entry.nzgd_id,
+                        "merged_nzgd_ids": [entry.report_id],
+                        "record_type": table_cfg.record_type,
+                        "error": repr(exc),
+                    }
+                )
+    conn.commit()
+    return n_discarded
