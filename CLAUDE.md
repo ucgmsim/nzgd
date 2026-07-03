@@ -45,8 +45,7 @@ The pipeline runs via `workflow.process_one_record(record_dir)`:
 4. **select_columns.py** `select_columns_for_one_sheet()` — Validates and selects the 4 required columns
 5. **validation.py** `validate_initial_extraction_of_sheet()` — Validates data ranges
 6. **conditioning.py** `data_conditioning_for_one_sheet()` — Unit conversions (explicit from headers, then inferred from magnitudes), placeholder removal
-7. **conditioning.py** `remove_duplicate_extractions()` — Deduplicates across sheets/files
-8. **output.py** `write_extracted_data()` — Writes parquet files
+7. **output.py** `write_extracted_data()` — Writes parquet files
 
 ### Header Detection (search.py)
 
