@@ -1,6 +1,5 @@
 """Integration tests for the constant-column quality filter."""
 
-import json
 import sqlite3
 
 import pytest
