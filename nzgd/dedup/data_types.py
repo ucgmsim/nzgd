@@ -68,3 +68,15 @@ class MergePlanEntry:
     match_pass: str  # 'hash' or 'fuzzy'
     matched_pairs: list[ReportPairMatch]  # reports to delete from merged record
     unique_merged_report_ids: list[int] = field(default_factory=list)  # reports to re-parent
+
+
+@dataclass(frozen=True)
+class QualityRejectEntry:
+    """One CPT report discarded by the constant-column quality filter."""
+
+    record_type: str
+    nzgd_id: int
+    report_id: int
+    reason: str                          # 'constant_column'
+    constant_columns: dict[str, float]   # {column_name: constant_value}
+    n_rows: int

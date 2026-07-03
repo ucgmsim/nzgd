@@ -46,6 +46,23 @@ _INDEX_AUDIT_CANONICAL = "CREATE INDEX IF NOT EXISTS idx_dedup_audit_canonical O
 _INDEX_AUDIT_MERGED    = "CREATE INDEX IF NOT EXISTS idx_dedup_audit_merged    ON dedup_audit(merged_nzgd_id)"
 _INDEX_AUDIT_CLUSTER   = "CREATE INDEX IF NOT EXISTS idx_dedup_audit_cluster   ON dedup_audit(cluster_id)"
 
+_CREATE_QUALITY_REJECT = """
+CREATE TABLE IF NOT EXISTS quality_reject (
+    reject_id             INTEGER PRIMARY KEY,
+    run_id                INTEGER NOT NULL REFERENCES dedup_run(run_id),
+    record_type           TEXT NOT NULL,
+    nzgd_id               INTEGER NOT NULL,
+    report_id             INTEGER NOT NULL,
+    reason                TEXT NOT NULL,
+    constant_columns_json TEXT NOT NULL,
+    n_rows                INTEGER NOT NULL,
+    rejected_at           TEXT NOT NULL
+)
+"""
+
+_INDEX_QUALITY_REJECT_RUN = "CREATE INDEX IF NOT EXISTS idx_quality_reject_run ON quality_reject(run_id)"
+_INDEX_QUALITY_REJECT_NZGD = "CREATE INDEX IF NOT EXISTS idx_quality_reject_nzgd_id ON quality_reject(nzgd_id)"
+
 _DROP_CPT_DATA_DUPLICATE_COLUMN = (
     "ALTER TABLE cptreport DROP COLUMN cpt_data_duplicate_of_cpt_id"
 )
@@ -173,4 +190,8 @@ def apply_dedup_schema(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as e:
             if "no such column" not in str(e).lower():
                 raise
+
+    cur.execute(_CREATE_QUALITY_REJECT)
+    cur.execute(_INDEX_QUALITY_REJECT_RUN)
+    cur.execute(_INDEX_QUALITY_REJECT_NZGD)
     conn.commit()
