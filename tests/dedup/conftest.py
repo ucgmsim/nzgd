@@ -12,7 +12,7 @@ INSERT INTO type VALUES (1, 'CPT'), (2, 'BH');
 
 CREATE TABLE nzgdrecord (
     nzgd_id INTEGER PRIMARY KEY,
-    type_id INTEGER NOT NULL,
+    type_id INTEGER NOT NULL REFERENCES type(id),
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
     model_vs30_foster_2019_m_per_s REAL,
@@ -31,7 +31,7 @@ CREATE TABLE nzgdrecord (
 
 CREATE TABLE cptreport (
     cpt_id INTEGER PRIMARY KEY,
-    nzgd_id INTEGER NOT NULL,
+    nzgd_id INTEGER NOT NULL REFERENCES nzgdrecord(nzgd_id),
     max_depth_m REAL,
     min_depth_m REAL,
     extracted_gwl_m REAL,
@@ -47,7 +47,7 @@ CREATE TABLE cptreport (
 
 CREATE TABLE cptmeasurements (
     measurement_id INTEGER PRIMARY KEY,
-    cpt_id INTEGER NOT NULL,
+    cpt_id INTEGER NOT NULL REFERENCES cptreport(cpt_id),
     depth_m REAL,
     qc_MPa REAL,
     fs_MPa REAL,
@@ -56,8 +56,8 @@ CREATE TABLE cptmeasurements (
 
 CREATE TABLE cptvs30estimates (
     vs30_id INTEGER PRIMARY KEY,
-    cpt_id INTEGER,
-    nzgd_id INTEGER,
+    cpt_id INTEGER REFERENCES cptreport(cpt_id),
+    nzgd_id INTEGER REFERENCES nzgdrecord(nzgd_id),
     cpt_to_vs_correlation_id INTEGER,
     vs_to_vs30_correlation_id INTEGER,
     vs30 REAL,
@@ -66,7 +66,7 @@ CREATE TABLE cptvs30estimates (
 
 CREATE TABLE sptreport (
     spt_id INTEGER PRIMARY KEY,
-    nzgd_id INTEGER NOT NULL,
+    nzgd_id INTEGER NOT NULL REFERENCES nzgdrecord(nzgd_id),
     efficiency REAL,
     extracted_gwl_m REAL,
     borehole_diameter REAL,
@@ -76,7 +76,7 @@ CREATE TABLE sptreport (
 
 CREATE TABLE sptmeasurements (
     spt_measurement_id INTEGER PRIMARY KEY,
-    spt_id INTEGER NOT NULL,
+    spt_id INTEGER NOT NULL REFERENCES sptreport(spt_id),
     depth_m REAL,
     ISPT_MAIN INTEGER,
     ISPT_NVAL INTEGER,
@@ -85,28 +85,28 @@ CREATE TABLE sptmeasurements (
 
 CREATE TABLE soilmeasurements (
     soil_measurement_id INTEGER PRIMARY KEY,
-    spt_id INTEGER NOT NULL,
+    spt_id INTEGER NOT NULL REFERENCES sptreport(spt_id),
     top_depth_m REAL,
     bottom_depth_m REAL
 );
 
 CREATE TABLE densitymeasurements (
     density_measurement_id INTEGER PRIMARY KEY,
-    spt_id INTEGER NOT NULL,
+    spt_id INTEGER NOT NULL REFERENCES sptreport(spt_id),
     top_depth_m REAL,
     bottom_depth_m REAL,
     density_keyword TEXT
 );
 
 CREATE TABLE soilmeasurementsoiltype (
-    soil_measurement_id INTEGER NOT NULL,
+    soil_measurement_id INTEGER NOT NULL REFERENCES soilmeasurements(soil_measurement_id),
     soil_type_id INTEGER NOT NULL,
     PRIMARY KEY (soil_measurement_id, soil_type_id)
 );
 
 CREATE TABLE sptvs30estimates (
     vs30_id INTEGER PRIMARY KEY,
-    spt_id INTEGER,
+    spt_id INTEGER REFERENCES sptreport(spt_id),
     spt_to_vs_correlation_id INTEGER,
     vs_to_vs30_correlation_id INTEGER,
     assumed_borehole_diameter_mm REAL,

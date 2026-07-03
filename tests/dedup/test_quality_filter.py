@@ -218,3 +218,36 @@ def test_emptied_record_deleted_in_full_pipeline(tmp_path: Path) -> None:
     finally:
         out.close()
     assert (tmp_path / "quality_reject_record_report.csv").exists()
+
+
+def test_emptied_record_deletion_is_fk_safe(fresh_db: sqlite3.Connection) -> None:
+    """Discarding a report that has a cptvs30estimates child and then deleting the
+    emptied record must succeed under foreign-key enforcement.
+
+    The conftest schema now declares real FK constraints (and fresh_db sets
+    PRAGMA foreign_keys = ON), so the delete cascade (cptvs30estimates +
+    cptmeasurements before cptreport) and the nzgdrecord delete must run in
+    FK-safe order — a broken cascade would raise a FOREIGN KEY constraint error.
+    """
+    add_cpt_record(fresh_db, nzgd_id=1)
+    add_cpt_report(fresh_db, 10, 1, [(0.1, 1.0, 0.010, 0.0),
+                                     (0.2, 1.1, 0.011, 0.0),
+                                     (0.3, 1.2, 0.012, 0.0)])
+    # a CPT-derived Vs30 estimate hanging off the report (FK -> cptreport, nzgdrecord)
+    fresh_db.execute(
+        "INSERT INTO cptvs30estimates (vs30_id, cpt_id, nzgd_id, vs30, vs30_stddev) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (1, 10, 1, 180.0, 0.2),
+    )
+
+    run_id = _start_run(fresh_db)
+    failures: list[dict] = []
+    entries = find_constant_column_reports(fresh_db, CPT_TABLE_CONFIG, _COLUMNS, 3)
+    apply_quality_filter(fresh_db, entries, run_id, CPT_TABLE_CONFIG, failures=failures)
+    n_emptied = delete_emptied_records(fresh_db, run_id, CPT_TABLE_CONFIG, failures=failures)
+
+    assert failures == []
+    assert n_emptied == 1
+    for table in ("cptreport", "cptmeasurements", "cptvs30estimates", "nzgdrecord"):
+        assert fresh_db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    assert fresh_db.execute("SELECT nzgd_id FROM quality_reject_record").fetchall() == [(1,)]
