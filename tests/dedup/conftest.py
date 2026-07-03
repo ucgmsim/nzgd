@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 _FULL_SCHEMA_SQL = """
 CREATE TABLE type (id INTEGER PRIMARY KEY, value TEXT);
 INSERT INTO type VALUES (1, 'CPT'), (2, 'BH');

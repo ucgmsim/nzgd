@@ -2,7 +2,6 @@
 
 import sqlite3
 
-
 _ADD_MERGED_INTO_COLUMN = (
     "ALTER TABLE nzgdrecord "
     "ADD COLUMN merged_into_nzgd_id INTEGER REFERENCES nzgdrecord(nzgd_id)"
