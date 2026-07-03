@@ -137,13 +137,17 @@ def apply_quality_filter(
             cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             cur.execute(f"RELEASE SAVEPOINT {savepoint}")
             if failures is not None:
+                # A discard is not a merge: no records are merged, so
+                # merged_nzgd_ids is empty. The offending report's id is a
+                # report_id (cpt_id), a different ID space from nzgd_id, so it
+                # is carried in the error text rather than in an nzgd_id column.
                 failures.append(
                     {
                         "cluster_id": None,
                         "canonical_nzgd_id": entry.nzgd_id,
-                        "merged_nzgd_ids": [entry.report_id],
+                        "merged_nzgd_ids": [],
                         "record_type": table_cfg.record_type,
-                        "error": repr(exc),
+                        "error": f"quality-filter discard of report_id={entry.report_id} failed: {exc!r}",
                     }
                 )
     conn.commit()
