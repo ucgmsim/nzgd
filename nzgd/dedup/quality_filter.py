@@ -152,3 +152,82 @@ def apply_quality_filter(
                 )
     conn.commit()
     return n_discarded
+
+
+def delete_emptied_records(
+    conn: sqlite3.Connection,
+    run_id: int,
+    table_cfg: TableConfig,
+    failures: list[dict] | None = None,
+) -> int:
+    """Delete nzgdrecord rows this run's quality filter left with zero reports.
+
+    Candidates are the records this run's filter touched (distinct nzgd_ids in
+    ``quality_reject`` for this run and record type). A record is deleted only if
+    its report table now has zero rows for it AND its ``merged_into_nzgd_id`` is
+    NULL — never a merge tombstone. This runs before any merge pass, so no
+    ``merged_into`` pointers exist yet; the NULL check is belt-and-suspenders.
+
+    Each deletion is its own SAVEPOINT (mirroring ``apply_quality_filter``) and is
+    recorded in ``quality_reject_record``. Failures are appended to ``failures``
+    (shared with the dedup failures report). Returns the number of records deleted.
+    """
+    cur = conn.cursor()
+    candidates = [
+        row[0]
+        for row in cur.execute(
+            "SELECT DISTINCT nzgd_id FROM quality_reject WHERE run_id = ? AND record_type = ?",
+            (run_id, table_cfg.record_type),
+        ).fetchall()
+    ]
+    n_deleted = 0
+    for nzgd_id in candidates:
+        remaining = cur.execute(
+            f"SELECT COUNT(*) FROM {table_cfg.report_table} WHERE nzgd_id = ?",
+            (nzgd_id,),
+        ).fetchone()[0]
+        if remaining != 0:
+            continue
+        row = cur.execute(
+            "SELECT merged_into_nzgd_id FROM nzgdrecord WHERE nzgd_id = ?",
+            (nzgd_id,),
+        ).fetchone()
+        if row is None or row[0] is not None:
+            continue  # record missing, or a merge tombstone — never delete
+        savepoint = f"quality_reject_record_{nzgd_id}"
+        cur.execute(f"SAVEPOINT {savepoint}")
+        try:
+            n_reports = cur.execute(
+                "SELECT COUNT(*) FROM quality_reject WHERE run_id = ? AND nzgd_id = ?",
+                (run_id, nzgd_id),
+            ).fetchone()[0]
+            cur.execute("DELETE FROM nzgdrecord WHERE nzgd_id = ?", (nzgd_id,))
+            cur.execute(
+                "INSERT INTO quality_reject_record (run_id, record_type, nzgd_id, "
+                "reason, n_reports_discarded, deleted_at) VALUES (?,?,?,?,?,?)",
+                (
+                    run_id,
+                    table_cfg.record_type,
+                    nzgd_id,
+                    "emptied_by_quality_filter",
+                    n_reports,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            n_deleted += 1
+        except Exception as exc:  # noqa: BLE001 — one bad record must not abort the rest
+            cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+            cur.execute(f"RELEASE SAVEPOINT {savepoint}")
+            if failures is not None:
+                failures.append(
+                    {
+                        "cluster_id": None,
+                        "canonical_nzgd_id": nzgd_id,
+                        "merged_nzgd_ids": [],
+                        "record_type": table_cfg.record_type,
+                        "error": f"emptied-record delete of nzgd_id={nzgd_id} failed: {exc!r}",
+                    }
+                )
+    conn.commit()
+    return n_deleted

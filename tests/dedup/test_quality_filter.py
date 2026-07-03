@@ -8,8 +8,15 @@ import pytest
 from typer.testing import CliRunner
 
 from nzgd.dedup.data_types import CPT_TABLE_CONFIG
-from nzgd.dedup.quality_filter import apply_quality_filter, find_constant_column_reports
-from nzgd.dedup.reports import write_quality_filter_report
+from nzgd.dedup.quality_filter import (
+    apply_quality_filter,
+    delete_emptied_records,
+    find_constant_column_reports,
+)
+from nzgd.dedup.reports import (
+    write_quality_filter_report,
+    write_quality_reject_record_report,
+)
 from nzgd.dedup.schema import apply_dedup_schema
 from nzgd.scripts.db.deduplicate import app
 from tests.dedup.conftest import _make_fresh_db, add_cpt_record, add_cpt_report
@@ -101,6 +108,53 @@ def test_apply_quality_filter_discards_and_audits(fresh_db: sqlite3.Connection, 
     text = out.read_text()
     assert "report_id" in text and "constant_columns" in text
     assert "u2_MPa" in text and "constant_column" in text
+
+
+def test_delete_emptied_records(fresh_db: sqlite3.Connection, tmp_path: Path) -> None:
+    # RecA (nzgd 1): single report, constant u2 -> record emptied -> deleted
+    add_cpt_record(fresh_db, nzgd_id=1)
+    add_cpt_report(fresh_db, 10, 1, [(0.1, 1.0, 0.010, 0.0),
+                                     (0.2, 1.1, 0.011, 0.0),
+                                     (0.3, 1.2, 0.012, 0.0)])
+    # RecB (nzgd 2): constant report + a good report -> record kept
+    add_cpt_record(fresh_db, nzgd_id=2)
+    add_cpt_report(fresh_db, 20, 2, [(0.1, 1.0, 0.010, 0.0),
+                                     (0.2, 1.1, 0.011, 0.0),
+                                     (0.3, 1.2, 0.012, 0.0)])
+    add_cpt_report(fresh_db, 21, 2, [(0.1, 1.0, 0.010, 0.05),
+                                     (0.2, 1.1, 0.011, 0.06),
+                                     (0.3, 1.2, 0.012, 0.07)])
+    # RecC (nzgd 3): single constant report BUT a merge tombstone -> NOT deleted
+    add_cpt_record(fresh_db, nzgd_id=3)
+    add_cpt_report(fresh_db, 30, 3, [(0.1, 1.0, 0.010, 0.0),
+                                     (0.2, 1.1, 0.011, 0.0),
+                                     (0.3, 1.2, 0.012, 0.0)])
+
+    run_id = _start_run(fresh_db)
+    # Make RecC a merge tombstone (redirect to RecB); the guard must protect it.
+    fresh_db.execute("UPDATE nzgdrecord SET merged_into_nzgd_id = 2 WHERE nzgd_id = 3")
+
+    failures: list[dict] = []
+    entries = find_constant_column_reports(fresh_db, CPT_TABLE_CONFIG, _COLUMNS, 3)
+    apply_quality_filter(fresh_db, entries, run_id, CPT_TABLE_CONFIG, failures=failures)
+    n_emptied = delete_emptied_records(fresh_db, run_id, CPT_TABLE_CONFIG, failures=failures)
+
+    assert n_emptied == 1
+    assert failures == []
+    # nzgd 1 deleted; nzgd 2 (good report) and nzgd 3 (tombstone) survive.
+    assert sorted(r[0] for r in fresh_db.execute("SELECT nzgd_id FROM nzgdrecord")) == [2, 3]
+    # RecB's good report survives.
+    assert sorted(r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport")) == [21]
+    # audit: exactly one emptied-record row, for nzgd 1.
+    qrr = fresh_db.execute(
+        "SELECT nzgd_id, reason, n_reports_discarded FROM quality_reject_record"
+    ).fetchall()
+    assert qrr == [(1, "emptied_by_quality_filter", 1)]
+
+    out = tmp_path / "qrr.csv"
+    write_quality_reject_record_report(fresh_db, run_id, out)
+    text = out.read_text()
+    assert "nzgd_id" in text and "emptied_by_quality_filter" in text
 
 
 def test_quality_filter_runs_in_full_pipeline(tmp_path: Path) -> None:

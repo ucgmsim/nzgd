@@ -110,3 +110,19 @@ def write_quality_filter_report(conn: sqlite3.Connection, run_id: int, path: Pat
         for record_type, nzgd_id, report_id, reason, cc_json, n_rows, rejected_at in rows:
             cols = ",".join(json.loads(cc_json).keys()) if cc_json else ""
             writer.writerow([record_type, nzgd_id, report_id, reason, cols, n_rows, rejected_at])
+
+
+def write_quality_reject_record_report(conn: sqlite3.Connection, run_id: int, path: Path) -> None:
+    """Flatten quality_reject_record rows for a given run into a CSV."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT record_type, nzgd_id, reason, n_reports_discarded, deleted_at "
+        "FROM quality_reject_record WHERE run_id = ? "
+        "ORDER BY record_type, nzgd_id",
+        (run_id,),
+    )
+    rows = cur.fetchall()
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["record_type", "nzgd_id", "reason", "n_reports_discarded", "deleted_at"])
+        writer.writerows(rows)
