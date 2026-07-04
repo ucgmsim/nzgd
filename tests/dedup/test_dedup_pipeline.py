@@ -798,3 +798,31 @@ def test_fuzzy_guard_rejects_partial_overlap(fresh_db: sqlite3.Connection) -> No
         "SELECT COUNT(*) FROM nzgdrecord WHERE merged_into_nzgd_id IS NOT NULL"
     ).fetchone()[0]
     assert merged == 0
+
+
+def test_fuzzy_reparents_uncontained_merged_report(fresh_db: sqlite3.Connection) -> None:
+    # Multi-report canonical: nzgd 1 has a SHORT report (0.1-3.0 m) and a LONG,
+    # unrelated report (10-35 m, distinct values). nzgd 2 has one LONG report
+    # (0.1-20.0 m) that matches nzgd 1's SHORT report on 0.1-3.0 m. Completeness
+    # makes nzgd 1 canonical (span 25 > 20); best_trace_score pairs (short, B_long),
+    # so B_long would be deleted -- but it is NOT contained in any of nzgd 1's
+    # reports, so it must be reparented (kept), not deleted.
+    short = [(d / 10, 1.0 + 0.1 * d, 0.01, 0.001 * d) for d in range(1, 31)]
+    b_long = [(d / 10, 1.0 + 0.1 * d, 0.01, 0.001 * d) for d in range(1, 201)]
+    a_long = [(d / 10, 40.0 + 0.1 * d, 0.5, 0.0) for d in range(100, 351)]
+    add_cpt_record(fresh_db, 1, -41.0, 174.0, "Multi Site", "2024-01-01")
+    add_cpt_record(fresh_db, 2, -41.0, 174.00001, "Multi Site", "2024-01-02")
+    add_cpt_report(fresh_db, 10, 1, short)
+    add_cpt_report(fresh_db, 11, 1, a_long)
+    add_cpt_report(fresh_db, 20, 2, b_long)
+
+    total_c, total_r = _run_both_passes(fresh_db, CPT_TABLE_CONFIG, _DEFAULT_THRESHOLDS)
+
+    assert (total_c, total_r) == (1, 1)
+    assert fresh_db.execute(
+        "SELECT merged_into_nzgd_id FROM nzgdrecord WHERE nzgd_id = 2"
+    ).fetchone()[0] == 1
+    # B_long (cpt 20) is KEPT (reparented to nzgd 1), not deleted -> its rows survive
+    assert fresh_db.execute("SELECT COUNT(*) FROM cptreport WHERE cpt_id = 20").fetchone()[0] == 1
+    assert fresh_db.execute("SELECT nzgd_id FROM cptreport WHERE cpt_id = 20").fetchone()[0] == 1
+    assert fresh_db.execute("SELECT COUNT(*) FROM cptmeasurements WHERE cpt_id = 20").fetchone()[0] == 200

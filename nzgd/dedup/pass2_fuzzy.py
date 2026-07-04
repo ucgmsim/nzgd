@@ -258,6 +258,28 @@ def generate_fuzzy_merge_plan(
                         ReportPairMatch(pm.merged_report_id, pm.canonical_report_id, pm.metrics)
                     )
 
+            # Delete a matched merged report only if its depth extent is contained
+            # in one of the canonical's reports; otherwise keep it (it falls into
+            # unique_ids below and is reparented). best_trace_score pairs by
+            # similarity, not length, so on a multi-report record the merged side's
+            # matched report can be longer than the canonical report it matched --
+            # reparenting instead of deleting guarantees no depth coverage is lost.
+            canonical_extents = [
+                _trace_depth_extent(arr) for arr in traces_for(canonical).values()
+            ]
+            merged_traces = traces_for(merged_nz)
+            kept_matched: list[ReportPairMatch] = []
+            for p in matched_pairs:
+                lo_m, hi_m = _trace_depth_extent(merged_traces[p.merged_report_id])
+                covered = not (math.isfinite(lo_m) and math.isfinite(hi_m)) or any(
+                    lo_c <= lo_m and hi_m <= hi_c
+                    for lo_c, hi_c in canonical_extents
+                    if math.isfinite(lo_c)
+                )
+                if covered:
+                    kept_matched.append(p)
+            matched_pairs = kept_matched
+
             cur.execute(
                 f"SELECT {table_cfg.report_id_column} FROM {table_cfg.report_table} "
                 f"WHERE nzgd_id = ?",
