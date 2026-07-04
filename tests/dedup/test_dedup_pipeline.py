@@ -1,18 +1,21 @@
 """End-to-end integration scenarios for the dedup pipeline."""
 
 import json
+import math
 import sqlite3
+from pathlib import Path
 
-import pytest
+import numpy as np
 
-from nzgd.dedup.data_types import CPT_TABLE_CONFIG, SPT_TABLE_CONFIG
+from nzgd.dedup.data_types import CPT_TABLE_CONFIG, SPT_TABLE_CONFIG, TableConfig
 from nzgd.dedup.executor import apply_merge_plan
 from nzgd.dedup.pass1_hash import generate_hash_merge_plan
 from nzgd.dedup.schema import apply_dedup_schema
+from nzgd.dedup.trace_compare import trace_depth_extent
 from tests.dedup.conftest import (
+    add_bh_record,
     add_cpt_record,
     add_cpt_report,
-    add_bh_record,
     add_spt_report,
 )
 
@@ -64,7 +67,7 @@ def test_exact_duplicate_pair_is_merged(fresh_db: sqlite3.Connection) -> None:
     assert audit == [(1, 1, 2, "hash")]
 
 
-def _run_both_passes(conn: sqlite3.Connection, cfg, thresholds) -> tuple[int, int]:
+def _run_both_passes(conn: sqlite3.Connection, cfg: TableConfig, thresholds: dict) -> tuple[int, int]:
     run_id = _start_run(conn)
     from nzgd.dedup.pass2_fuzzy import generate_fuzzy_merge_plan
     hash_plan = generate_hash_merge_plan(conn, cfg)
@@ -296,7 +299,7 @@ def test_spt_fuzzy_pass_handles_string_blowcount_without_crash(fresh_db: sqlite3
 # === Pass 0 (within-record consolidation) scenarios ===
 
 
-def _run_pass0(conn: sqlite3.Connection, cfg) -> tuple[int, int]:
+def _run_pass0(conn: sqlite3.Connection, cfg: TableConfig) -> tuple[int, int]:
     from nzgd.dedup.pass0_within_record import (
         apply_within_record_consolidation_plan,
         generate_within_record_consolidation_plan,
@@ -456,9 +459,10 @@ def test_pass0_then_pass1_cross_record(fresh_db: sqlite3.Connection) -> None:
     assert "within_record" in audit_passes and "hash" in audit_passes
 
 
-def test_pass0_schema_migration_drops_legacy_column(fresh_db: sqlite3.Connection, tmp_path) -> None:
+def test_pass0_schema_migration_drops_legacy_column(fresh_db: sqlite3.Connection, tmp_path: Path) -> None:
     """A DB carrying the legacy column gets it dropped by apply_dedup_schema."""
     import sqlite3 as _sqlite3
+
     from nzgd.dedup.schema import apply_dedup_schema
 
     db_path = tmp_path / "legacy.db"
@@ -623,7 +627,7 @@ def test_select_value_tiebreak_decimals_then_cpt_id() -> None:
     assert select_value([(1.2, 7), (1.3, 5)]) == 1.3
 
 
-def _run_supp_consolidation(conn: sqlite3.Connection, cfg) -> tuple[int, int]:
+def _run_supp_consolidation(conn: sqlite3.Connection, cfg: TableConfig) -> tuple[int, int]:
     from nzgd.dedup.supplemental_consolidation import (
         consolidate_within_record_supplemental,
     )
@@ -720,7 +724,7 @@ def test_supp_idempotent(fresh_db: sqlite3.Connection) -> None:
     assert cells2 == 0
 
 
-def test_supplemental_consolidation_report(fresh_db: sqlite3.Connection, tmp_path) -> None:
+def test_supplemental_consolidation_report(fresh_db: sqlite3.Connection, tmp_path: Path) -> None:
     from nzgd.dedup.reports import write_supplemental_consolidation_report
     trace = [(0.1, 1.0, 0.01, 0.0)]
     add_cpt_record(fresh_db, nzgd_id=8)
@@ -730,7 +734,9 @@ def test_supplemental_consolidation_report(fresh_db: sqlite3.Connection, tmp_pat
     fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=1.5 WHERE cpt_id=2")
     fresh_db.execute("UPDATE cptreport SET extracted_gwl_m=22.0 WHERE cpt_id=3")
     run_id = _start_run(fresh_db)
-    from nzgd.dedup.supplemental_consolidation import consolidate_within_record_supplemental
+    from nzgd.dedup.supplemental_consolidation import (
+        consolidate_within_record_supplemental,
+    )
     consolidate_within_record_supplemental(fresh_db, CPT_TABLE_CONFIG, run_id)
 
     out = tmp_path / "supp.csv"
@@ -738,3 +744,36 @@ def test_supplemental_consolidation_report(fresh_db: sqlite3.Connection, tmp_pat
     text = out.read_text()
     assert "nzgd_id" in text and "conflict_fields" in text
     assert "extracted_gwl_m" in text  # the skipped conflict is reported
+
+
+def test_trace_depth_extent() -> None:
+    arr = np.array([[0.1, 1.0], [0.5, 2.0], [0.3, 3.0]])
+    assert trace_depth_extent(arr) == (0.1, 0.5)
+    nan_depths = np.array([[math.nan, 1.0], [math.nan, 2.0]])
+    lo, hi = trace_depth_extent(nan_depths)
+    assert math.isnan(lo) and math.isnan(hi)
+    lo, hi = trace_depth_extent(np.empty((0, 2)))
+    assert math.isnan(lo) and math.isnan(hi)
+
+
+def test_fuzzy_keeps_most_complete_trace(fresh_db: sqlite3.Connection) -> None:
+    # nzgd 1 (smaller id) holds only a 0.1-0.3 m fragment; nzgd 2 holds the full
+    # 0.1-3.0 m trace. They match on the fragment's overlap and merge. Today's
+    # smallest-id tiebreak wrongly keeps the fragment; completeness must keep the
+    # full trace.
+    full = [(d / 10, 1.0 + 0.1 * d, 0.01 + 0.001 * d, 0.001 * d) for d in range(1, 31)]
+    frag = full[:3]
+    add_cpt_record(fresh_db, 1, -41.0, 174.0, "Site X", "2024-01-01")
+    add_cpt_record(fresh_db, 2, -41.0, 174.00001, "Site X", "2024-01-02")
+    add_cpt_report(fresh_db, 10, 1, frag)
+    add_cpt_report(fresh_db, 20, 2, full)
+
+    total_c, total_r = _run_both_passes(fresh_db, CPT_TABLE_CONFIG, _DEFAULT_THRESHOLDS)
+
+    assert (total_c, total_r) == (1, 1)
+    survivor = fresh_db.execute(
+        "SELECT nzgd_id FROM nzgdrecord WHERE merged_into_nzgd_id IS NULL"
+    ).fetchone()[0]
+    assert survivor == 2  # the full-coverage record
+    # the surviving trace is the full 30-row one; the fragment was deleted
+    assert fresh_db.execute("SELECT COUNT(*) FROM cptmeasurements").fetchone()[0] == 30

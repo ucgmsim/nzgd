@@ -7,10 +7,9 @@ Picks the canonical nzgd_id per the spec rule:
 """
 
 import sqlite3
-from typing import Iterable
+from collections.abc import Iterable
 
 from nzgd.dedup.data_types import TableConfig
-
 
 _NZGDRECORD_METADATA_COLUMNS = (
     "type_id", "latitude", "longitude",
@@ -80,6 +79,7 @@ def select_canonical(
     cluster_nzgd_ids: Iterable[int],
     matched_pairs: Iterable[tuple[int, int, int, int]],
     table_cfg: TableConfig,
+    completeness: dict[int, float] | None = None,
 ) -> int:
     """Pick the canonical nzgd_id from a cluster of nzgd_ids per the spec rule.
 
@@ -94,6 +94,11 @@ def select_canonical(
         report pairs across nzgd_ids in this cluster (as identified by the pass).
     table_cfg
         Per-record-type table configuration.
+    completeness
+        Optional `{nzgd_id: depth-coverage}` map. When provided, coverage is the
+        primary sort key so the most-complete trace survives; ties fall through
+        to the original rule (most unique measurement rows, then most non-null
+        metadata, then smallest nzgd_id). When None, the ranking is unchanged.
 
     Returns
     -------
@@ -107,7 +112,8 @@ def select_canonical(
         matched_ids = _matched_report_ids_for_nzgd(nz, pairs)
         unique_rows = _unique_measurement_row_count(conn, nz, matched_ids, table_cfg)
         meta_count = _non_null_metadata_count(conn, nz)
-        # Sort key: maximise unique_rows, then meta_count; minimise nzgd_id
-        scored.append((-unique_rows, -meta_count, nz))
+        cov = completeness.get(nz, 0.0) if completeness is not None else 0.0
+        # Sort key: maximise coverage, then unique_rows, then meta_count; minimise nzgd_id
+        scored.append((-cov, -unique_rows, -meta_count, nz))
     scored.sort()
-    return scored[0][2]
+    return scored[0][3]

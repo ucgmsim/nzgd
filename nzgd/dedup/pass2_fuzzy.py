@@ -14,13 +14,16 @@ from tqdm import tqdm
 
 from nzgd.dedup.cluster import connected_components_from_edges
 from nzgd.dedup.data_types import MergePlanEntry, ReportPairMatch, TableConfig
+from nzgd.dedup.selection import select_canonical
 from nzgd.dedup.trace_compare import (
     best_trace_score as _best_trace_score,
-    coerce_to_float as _coerce_to_float,
-    load_traces as _load_traces,
-    trace_score as _trace_score,
 )
-from nzgd.dedup.selection import select_canonical
+from nzgd.dedup.trace_compare import (
+    load_traces as _load_traces,
+)
+from nzgd.dedup.trace_compare import (
+    trace_depth_extent as _trace_depth_extent,
+)
 
 
 def _load_active_records(
@@ -41,6 +44,16 @@ def _load_active_records(
         {"nzgd_id": r[0], "lat": r[1], "lon": r[2], "date": r[3], "name": r[4]}
         for r in cur.fetchall()
     ]
+
+
+def _record_completeness(traces: dict[int, np.ndarray]) -> float:
+    """Widest depth span (max - min extent) across a record's traces; 0.0 if none finite."""
+    best = 0.0
+    for arr in traces.values():
+        lo, hi = _trace_depth_extent(arr)
+        if math.isfinite(lo) and math.isfinite(hi):
+            best = max(best, hi - lo)
+    return best
 
 
 def _predicate(features: dict, thresholds: dict) -> bool:
@@ -204,7 +217,10 @@ def generate_fuzzy_merge_plan(
                 metrics=dict(pair_metadata[key]["features"]),
             )
 
-        canonical = select_canonical(conn, nzgd_ids, matched_pairs_for_selection, table_cfg)
+        completeness = {nz: _record_completeness(traces_for(nz)) for nz in nzgd_ids}
+        canonical = select_canonical(
+            conn, nzgd_ids, matched_pairs_for_selection, table_cfg, completeness=completeness
+        )
 
         # Sort the merged nzgd_ids by trace_score with the canonical (best first),
         # so the executor applies metadata enrichment in score order.

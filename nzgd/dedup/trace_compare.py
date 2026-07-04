@@ -3,13 +3,14 @@
 import math
 import sqlite3
 from collections import defaultdict
+from typing import Any
 
 import numpy as np
 
 from nzgd.dedup.data_types import TableConfig
 
 
-def coerce_to_float(v) -> float:
+def coerce_to_float(v: Any) -> float:
     """Coerce a SQLite cell to float; non-numeric strings become NaN."""
     if v is None:
         return math.nan
@@ -44,6 +45,21 @@ def load_traces(
         rid = row[0]
         rows_by_report[rid].append(tuple(coerce_to_float(v) for v in row[1:]))
     return {rid: np.array(rows, dtype=float) for rid, rows in rows_by_report.items()}
+
+
+def trace_depth_extent(arr: np.ndarray) -> tuple[float, float]:
+    """Return (min, max) of a trace's finite depths (column 0).
+
+    Depth is column 0 per ``load_traces``. Returns ``(nan, nan)`` if the trace
+    is empty or has no finite depth.
+    """
+    if arr.shape[0] == 0:
+        return math.nan, math.nan
+    depths = arr[:, 0]
+    finite = depths[np.isfinite(depths)]
+    if finite.size == 0:
+        return math.nan, math.nan
+    return float(finite.min()), float(finite.max())
 
 
 def trace_score(a: np.ndarray, b: np.ndarray, step: float) -> float:
