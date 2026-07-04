@@ -83,6 +83,7 @@ _DEFAULT_THRESHOLDS = {
     "name_similarity_min": 80,
     "trace_score_max": 0.05,
     "trace_resample_step_m": 0.05,
+    "containment_frac": 0.9,
 }
 
 
@@ -777,3 +778,23 @@ def test_fuzzy_keeps_most_complete_trace(fresh_db: sqlite3.Connection) -> None:
     assert survivor == 2  # the full-coverage record
     # the surviving trace is the full 30-row one; the fragment was deleted
     assert fresh_db.execute("SELECT COUNT(*) FROM cptmeasurements").fetchone()[0] == 30
+
+
+def test_fuzzy_guard_rejects_partial_overlap(fresh_db: sqlite3.Connection) -> None:
+    # Traces 0.0-2.0 m and 1.5-3.5 m: they agree on the 1.5-2.0 m overlap, but
+    # neither contains the other (overlap 0.5 m / min span 2.0 m = 0.25 < 0.9),
+    # so the guard must keep them as two separate records.
+    a = [(d / 10, 1.0 + 0.1 * d, 0.01, 0.001 * d) for d in range(0, 21)]
+    b = [(d / 10, 1.0 + 0.1 * d, 0.01, 0.001 * d) for d in range(15, 36)]
+    add_cpt_record(fresh_db, 1, -41.0, 174.0, "Site Y", "2024-01-01")
+    add_cpt_record(fresh_db, 2, -41.0, 174.00001, "Site Y", "2024-01-02")
+    add_cpt_report(fresh_db, 10, 1, a)
+    add_cpt_report(fresh_db, 20, 2, b)
+
+    total_c, _ = _run_both_passes(fresh_db, CPT_TABLE_CONFIG, _DEFAULT_THRESHOLDS)
+
+    assert total_c == 0
+    merged = fresh_db.execute(
+        "SELECT COUNT(*) FROM nzgdrecord WHERE merged_into_nzgd_id IS NOT NULL"
+    ).fetchone()[0]
+    assert merged == 0

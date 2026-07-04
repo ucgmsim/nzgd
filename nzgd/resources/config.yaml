@@ -216,6 +216,7 @@ deduplication:
     name_similarity_min: 80
     trace_score_max: 0.05
     trace_resample_step_m: 0.05
+    containment_frac: 0.9
 
   calibration:
     random_pair_sample_size: 5000

@@ -66,6 +66,8 @@ def _predicate(features: dict, thresholds: dict) -> bool:
         return False
     if features["trace_score"] >= thresholds["trace_score_max"]:
         return False
+    if features["overlap_containment"] < thresholds["containment_frac"]:
+        return False
     return True
 
 
@@ -167,12 +169,23 @@ def generate_fuzzy_merge_plan(
             b_depths = [t[:, 0].max() for t in tb.values() if t.shape[0] > 0]
             if a_depths and b_depths:
                 max_depth_diff = float(abs(max(a_depths) - max(b_depths)))
+        overlap_containment = 0.0
+        if best_pair is not None:
+            ra_best, rb_best = best_pair
+            lo_a, hi_a = _trace_depth_extent(ta[ra_best])
+            lo_b, hi_b = _trace_depth_extent(tb[rb_best])
+            if math.isfinite(lo_a) and math.isfinite(lo_b):
+                span_a, span_b = hi_a - lo_a, hi_b - lo_b
+                overlap = max(0.0, min(hi_a, hi_b) - max(lo_a, lo_b))
+                min_span = min(span_a, span_b)
+                overlap_containment = 1.0 if min_span == 0 else overlap / min_span
         features = {
             "spatial_m": spatial,
             "date_days": date_days,
             "name_sim": name_sim,
             "max_depth_diff_m": max_depth_diff,
             "trace_score": trace_score,
+            "overlap_containment": overlap_containment,
         }
 
         predicate_matched = _predicate(features, thresholds) and best_pair is not None
