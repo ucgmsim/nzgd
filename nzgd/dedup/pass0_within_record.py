@@ -334,10 +334,18 @@ def generate_within_record_consolidation_plan(
                 for rid in cluster_report_ids
             ]
             canonical_id = canonical_selector(cluster_rows, table_cfg)
+            canonical_lo, canonical_hi = extent_by_id[canonical_id]
             has_data_by_id = {rid: measurement_count_by_id[rid] > 0 for rid in cluster_report_ids}
             absorbed = []
             for rid in cluster_report_ids:
                 if rid == canonical_id:
+                    continue
+                lo_a, hi_a = extent_by_id[rid]
+                contained = not (math.isfinite(lo_a) and math.isfinite(hi_a)) or (
+                    math.isfinite(canonical_lo) and canonical_lo <= lo_a and hi_a <= canonical_hi
+                )
+                if not contained:
+                    # genuine partial overlap: keep as a separate report under the same nzgd_id
                     continue
                 absorbed.append(_AbsorbedReport(
                     absorbed_report_id=rid,
@@ -347,6 +355,8 @@ def generate_within_record_consolidation_plan(
                         thresholds["trace_score_max"], thresholds["trace_resample_step_m"],
                     ),
                 ))
+            if not absorbed:
+                continue
             plans.append(WithinRecordConsolidation(
                 cluster_id=next_cluster_id,
                 nzgd_id=nzgd_id,

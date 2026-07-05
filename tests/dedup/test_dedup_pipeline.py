@@ -451,6 +451,26 @@ def test_pass0_canonical_prefers_widest_depth_span(fresh_db: sqlite3.Connection)
     assert max_depth == 2.0  # full depth coverage preserved
 
 
+def test_pass0_keeps_partial_overlap_reports(fresh_db: sqlite3.Connection) -> None:
+    """Two traces that are identical on their overlap but where neither contains the
+    other (0.1-1.0 vs 0.6-1.6) cluster together, yet must both survive — deleting
+    either would lose the depth the other lacks."""
+    def qc(d: float) -> float:
+        return 2.0 + d
+    trace_a = [(round(0.1 * i, 1), qc(0.1 * i), 0.02, 0.0) for i in range(1, 11)]    # 0.1..1.0
+    trace_b = [(round(0.1 * i, 1), qc(0.1 * i), 0.02, 0.0) for i in range(6, 17)]    # 0.6..1.6
+    add_cpt_record(fresh_db, nzgd_id=1, lat=-41.0, lon=174.0)
+    add_cpt_report(fresh_db, cpt_id=10, nzgd_id=1, trace=trace_a, source_file="A.xlsx_sheet_Lower")
+    add_cpt_report(fresh_db, cpt_id=20, nzgd_id=1, trace=trace_b, source_file="A.xlsx_sheet_Upper")
+
+    n_clusters, n_records = _run_pass0(fresh_db, CPT_TABLE_CONFIG)
+    assert (n_clusters, n_records) == (0, 0)  # partial overlap -> no absorption
+    remaining = [r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport ORDER BY cpt_id")]
+    assert remaining == [10, 20]  # both reports kept
+    deep = fresh_db.execute("SELECT MAX(depth_m) FROM cptmeasurements WHERE cpt_id = 20").fetchone()[0]
+    assert deep == 1.6  # the deeper report's coverage is intact
+
+
 def test_pass0_then_pass1_cross_record(fresh_db: sqlite3.Connection) -> None:
     """Two nzgd_ids each with within-record duplicates, and they are also cross-record duplicates."""
     trace = [(0.1, 1.0, 0.01, 0.0), (0.2, 1.1, 0.011, 0.0)]
