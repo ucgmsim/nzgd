@@ -28,7 +28,7 @@ from nzgd.dedup.cluster import connected_components_from_edges
 from nzgd.dedup.data_types import TableConfig
 from nzgd.dedup.fingerprint import compute_trace_hash
 from nzgd.dedup.plausibility import is_useful_value
-from nzgd.dedup.trace_compare import best_trace_score, load_traces
+from nzgd.dedup.trace_compare import best_trace_score, load_traces, trace_depth_extent
 
 
 _CPTREPORT_METADATA_COLUMNS = (
@@ -315,12 +315,21 @@ def generate_within_record_consolidation_plan(
         for cluster_report_ids in clusters:
             if len(cluster_report_ids) <= 1:
                 continue
+            extent_by_id = {
+                rid: (trace_depth_extent(traces[rid]) if rid in traces else (math.nan, math.nan))
+                for rid in cluster_report_ids
+            }
+            span_by_id = {
+                rid: (hi - lo if math.isfinite(lo) and math.isfinite(hi) else 0.0)
+                for rid, (lo, hi) in extent_by_id.items()
+            }
             cluster_rows = [
                 ClusterRow(
                     report_id=rid,
                     has_data=measurement_count_by_id[rid] > 0,
                     measurement_row_count=measurement_count_by_id[rid],
                     metadata_non_null_count=_metadata_non_null_count(conn, rid, table_cfg),
+                    depth_span=span_by_id[rid],
                 )
                 for rid in cluster_report_ids
             ]

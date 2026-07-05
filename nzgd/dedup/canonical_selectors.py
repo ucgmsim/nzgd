@@ -14,6 +14,7 @@ class ClusterRow:
     has_data: bool                  # has_cpt_data=1 for CPT; measurement_row_count > 0 for SPT
     measurement_row_count: int
     metadata_non_null_count: int    # non-NULL fields in cptreport/sptreport metadata
+    depth_span: float               # max_depth - min_depth of the trace; 0.0 if no finite depth
 
 
 CanonicalSelector = Callable[[Sequence[ClusterRow], TableConfig], int]
@@ -23,6 +24,6 @@ def default_within_record_canonical(
     cluster_rows: Sequence[ClusterRow],
     table_cfg: TableConfig,
 ) -> int:
-    """v1 default: prefer rows with has_data=True; tiebreaker smallest report_id."""
+    """v2 default: prefer has_data rows; among them the widest depth span; tiebreaker smallest report_id."""
     candidates = [r for r in cluster_rows if r.has_data] or list(cluster_rows)
-    return min(candidates, key=lambda r: r.report_id).report_id
+    return min(candidates, key=lambda r: (-r.depth_span, r.report_id)).report_id

@@ -431,6 +431,26 @@ def test_pass0_fuzzy_within_record_match(fresh_db: sqlite3.Connection) -> None:
     assert remaining == [10]
 
 
+def test_pass0_canonical_prefers_widest_depth_span(fresh_db: sqlite3.Connection) -> None:
+    """A short fragment (smaller cpt_id) and a long trace identical on their overlap
+    cluster together; the long trace must become canonical and survive (old code kept
+    the lowest-id fragment and deleted the long trace)."""
+    def qc(d: float) -> float:
+        return 1.0 + 0.5 * d
+    short_trace = [(round(0.1 * i, 1), qc(0.1 * i), 0.01, 0.0) for i in range(1, 5)]   # 0.1..0.4
+    long_trace = [(round(0.1 * i, 1), qc(0.1 * i), 0.01, 0.0) for i in range(1, 21)]   # 0.1..2.0
+    add_cpt_record(fresh_db, nzgd_id=1, lat=-41.0, lon=174.0)
+    add_cpt_report(fresh_db, cpt_id=10, nzgd_id=1, trace=short_trace, source_file="A.xlsx_sheet_Frag")
+    add_cpt_report(fresh_db, cpt_id=20, nzgd_id=1, trace=long_trace,  source_file="A.xlsx_sheet_Full")
+
+    n_clusters, n_records = _run_pass0(fresh_db, CPT_TABLE_CONFIG)
+    assert (n_clusters, n_records) == (1, 1)
+    remaining = [r[0] for r in fresh_db.execute("SELECT cpt_id FROM cptreport ORDER BY cpt_id")]
+    assert remaining == [20]  # the long trace survives, not the lowest-id fragment
+    max_depth = fresh_db.execute("SELECT MAX(depth_m) FROM cptmeasurements WHERE cpt_id = 20").fetchone()[0]
+    assert max_depth == 2.0  # full depth coverage preserved
+
+
 def test_pass0_then_pass1_cross_record(fresh_db: sqlite3.Connection) -> None:
     """Two nzgd_ids each with within-record duplicates, and they are also cross-record duplicates."""
     trace = [(0.1, 1.0, 0.01, 0.0), (0.2, 1.1, 0.011, 0.0)]
