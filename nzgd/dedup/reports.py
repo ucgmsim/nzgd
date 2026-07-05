@@ -41,7 +41,7 @@ def write_calibration_report(
 ) -> None:
     """Write feature distributions for positive and negative fuzzy-pass examples."""
     fieldnames = ["group", "spatial_m", "date_days", "name_sim",
-                  "max_depth_diff_m", "trace_score"]
+                  "max_depth_diff_m", "trace_score", "overlap_containment"]
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

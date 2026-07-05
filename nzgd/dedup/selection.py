@@ -1,6 +1,8 @@
 """Canonical selection for a dedup cluster.
 
 Picks the canonical nzgd_id per the spec rule:
+  0. When a `completeness` map is supplied (the fuzzy pass), highest depth
+     coverage first, so the most-complete trace survives.
   1. Highest count of measurement rows in reports with no matched-pair counterpart.
   2. Tiebreaker: most non-null nzgdrecord columns.
   3. Tiebreaker: smallest nzgd_id.
