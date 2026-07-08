@@ -152,8 +152,20 @@ report; the dedup within-record consolidation kept the duplicate-containing repo
 as canonical and removed the clean sibling. Example — nzgd 11853: raw reports
 cpt_id 30721 (2000 rows, 0 duplicates) and 30725 (2004 rows, 4 duplicates), both
 to 20.0 m; current keeps 30725 → duplicate-depths → fail. Coverage is preserved;
-only trace *quality* differs. This is a minor, fixable pipeline nuance (≈0.03 % of
-passes), not loss.
+only trace *quality* differs.
+
+This same-depth-row phenomenon is not specific to these 7 records, nor is it a
+dedup regression: it is a pre-existing **extraction** artifact (a report stores
+*conflicting* measurements at one depth — e.g. nzgd 11853 has qc 22.76 and 23.99
+at 10.34 m), and it is stable across versions — Filter 3 rejects 183 such
+representatives in v0p6p0 and 177 in current (dedup slightly *reduced* it). No
+depth coverage is lost in any of them. Because the repeated rows carry conflicting
+values (not exact duplicates), collapsing them is a lossy domain choice best made
+by the consumer: dropping or averaging same-depth rows in the screening (a one-line
+change before Filter 3) recovers these ~177 records. A pipeline change was
+considered and **deliberately declined** — it would modify measurement data for all
+users to satisfy one downstream filter while recovering no lost data. If those
+records ever matter, the correct fix is upstream in extraction, not in dedup.
 
 ## Is the latest pipeline immune?
 
@@ -183,9 +195,11 @@ a policy mismatch on constant-u2 or the correct collapsing of duplicates.
 3. **Screen the deduped DB, not multi-report raw exports.** It removes the
    representative-selection nondeterminism and the constant-u2 shadowing that make
    raw-export counts unstable across versions.
-4. **Optional pipeline follow-up:** have within-record canonical selection prefer a
-   duplicate-depth-free trace (or de-duplicate depth rows), which would recover the
-   7 duplicate-depth flips.
+4. **Duplicate-depth rejections are yours to tune, not a pipeline bug.** Filter 3
+   rejects ~177 otherwise-usable traces that carry a few same-depth rows (an
+   extraction artifact, not dedup; no coverage lost). Drop or average same-depth
+   rows in the screening to recover them; a pipeline change was assessed and
+   declined as low-value.
 
 ## Method and caveats
 
