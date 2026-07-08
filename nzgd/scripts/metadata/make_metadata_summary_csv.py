@@ -1,14 +1,23 @@
-"""Script to create the metadata summary CSV file from the UC NZGD SQLite database and the NZGD index file.
+"""Create the metadata summary CSV from the *deduplicated* UC NZGD SQLite DB and the NZGD index file.
 
-For a NZGD IDs with several CPT IDs, metadata from each CPT is combined into a single row.
-If multiple CPT IDs all have valid metadata values, the first valid value it finds is used.
+Reads the deduped DB (``<OUTPUT_DB_PATH stem>_deduped.db``) so the summary reflects
+dedup/consolidation: cross-record duplicates have been merged and degenerate reports
+removed. For an nzgd_id with several reports, metadata from each is combined into a
+single row (the first valid value found is used).
 
-Many columns are renamed from the SQLite database and the NZGD index file so they match and can be concatenated.
+A cross-record merge leaves the merged nzgd_id as a *tombstone* in ``nzgdrecord``
+(``merged_into_nzgd_id`` set, no cptreport/sptreport rows). That nzgd_id is still in
+the NZGD index, so it is added back below as a trace-less row; a ``merged_into_nzgd_id``
+column then points it at the canonical it was consolidated into (merge chains resolved
+to the terminal canonical). This keeps every nzgd_id discoverable while ensuring each
+physical sounding is represented once — under its canonical — rather than double-listed.
+
+Many columns are renamed from the SQLite DB and the NZGD index file so they match and
+can be concatenated.
 """
 
 import sqlite3
 from collections.abc import Iterator
-from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -32,6 +41,20 @@ except ImportError:
         return iter(iterable)
 
 
+# Read the de-duplicated DB. deduplicate.py names its output by appending the deduped
+# suffix to the source DB stem; OUTPUT_DB_PATH (the raw DB) is left untouched so the
+# extraction and other scripts that write to it are unaffected.
+DEDUPED_DB_PATH = constants.OUTPUT_DB_PATH.with_name(
+    constants.OUTPUT_DB_PATH.stem
+    + constants.DEDUP_CONFIG["output"]["deduped_db_suffix"]
+    + ".db"
+)
+if not DEDUPED_DB_PATH.exists():
+    raise FileNotFoundError(
+        f"Deduped DB not found: {DEDUPED_DB_PATH}. Run deduplicate.py first."
+    )
+
+
 nzgd_index_df = pd.read_csv(constants.INDEX_FILE_PATH, low_memory=False)
 nzgd_index_df = nzgd_index_df.rename(
     columns={
@@ -46,7 +69,7 @@ nzgd_index_df = nzgd_index_df.rename(
 
 
 print("Loading data from database...")
-with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
+with sqlite3.connect(DEDUPED_DB_PATH) as db:
     print("  Loading cptreport data...")
     cpt_report_count = db.execute("SELECT COUNT(*) FROM cptreport").fetchone()[0]
     print(f"    Loaded {cpt_report_count} CPT reports")
@@ -54,7 +77,7 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
     print("  Loading CPT metadata summary...")
     cpt_metadata_summary_df = pd.read_sql_query(
         """
-        SELECT 
+        SELECT
             cr.cpt_id,
             cr.nzgd_id,
             cr.max_depth_m,
@@ -98,7 +121,7 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
     print("  Loading SPT metadata summary...")
     spt_metadata_summary_df = pd.read_sql_query(
         """
-        SELECT 
+        SELECT
             sr.*,
             nz.latitude,
             nz.longitude,
@@ -127,6 +150,14 @@ with sqlite3.connect(constants.OUTPUT_DB_PATH) as db:
     )
     spt_metadata_summary_df["has_extracted_spt_trace"] = 1
     print(f"    Loaded {len(spt_metadata_summary_df)} SPT metadata rows")
+
+    print("  Loading merge tombstones...")
+    merged_into_df = pd.read_sql_query(
+        "SELECT nzgd_id, merged_into_nzgd_id FROM nzgdrecord "
+        "WHERE merged_into_nzgd_id IS NOT NULL",
+        db,
+    )
+    print(f"    Loaded {len(merged_into_df)} merged-away nzgd_ids")
 print("Data loading complete.\n")
 
 
@@ -164,12 +195,11 @@ def fill_reference_row_per_nzgd_id(
     result_rows = []
     filled_count = 0
 
-    # Group by nzgd_id with progress bar
-    for nzgd_id in tqdm(
-        unique_nzgd_ids, desc=f"  Processing {name}", total=total_groups
+    # Iterate groups via groupby (avoids re-filtering the whole frame per id, which is
+    # O(n^2)); groupby(sort=False) preserves first-appearance and within-group order.
+    for _nzgd_id, group_df in tqdm(
+        df.groupby("nzgd_id", sort=False), desc=f"  Processing {name}", total=total_groups
     ):
-        group_df = df[df["nzgd_id"] == nzgd_id]
-
         if group_df.empty:
             continue
 
@@ -287,8 +317,44 @@ all_metadata_from_db_and_index = all_metadata_from_db_and_index.rename(
     columns={"has_cpt_data": "has_extracted_cpt_trace"}
 )
 
-output_filename = f"uc_nzgd_metadata_summary_{date.today().isoformat()}.csv"
-output_path = constants.OUTPUT_DB_PATH.parent / output_filename
+# Mark cross-record merge tombstones with a pointer to the canonical they were
+# consolidated into, resolving merge chains (A->B->C) to the terminal canonical. These
+# rows were added back from the index above (they have no report rows in the deduped
+# DB), so the pointer prevents a merged-away sounding from being mistaken for an
+# independent un-extracted record.
+direct_merge = dict(
+    zip(merged_into_df["nzgd_id"], merged_into_df["merged_into_nzgd_id"])
+)
+
+
+def resolve_terminal_canonical(nzgd_id: int) -> int:
+    """Follow merged_into_nzgd_id pointers to the final (non-tombstone) canonical."""
+    seen: set[int] = set()
+    while nzgd_id in direct_merge and nzgd_id not in seen:
+        seen.add(nzgd_id)
+        nzgd_id = direct_merge[nzgd_id]
+    return nzgd_id
+
+
+terminal_canonical_by_tombstone = {
+    nzgd_id: resolve_terminal_canonical(nzgd_id) for nzgd_id in direct_merge
+}
+all_metadata_from_db_and_index["merged_into_nzgd_id"] = (
+    all_metadata_from_db_and_index["nzgd_id"]
+    .map(terminal_canonical_by_tombstone)
+    .astype("Int64")
+)
+print(
+    f"Marked {all_metadata_from_db_and_index['merged_into_nzgd_id'].notna().sum()} "
+    "merged-away nzgd_ids with a pointer to their canonical."
+)
+
+# Name the output after the deduped DB for provenance (supersedes any stale summary
+# generated from an earlier deduped build).
+output_filename = (
+    f"uc_nzgd_metadata_summary_{DEDUPED_DB_PATH.stem.removeprefix('uc_nzgd_')}.csv"
+)
+output_path = DEDUPED_DB_PATH.parent / output_filename
 
 all_metadata_from_db_and_index.to_csv(output_path, index=False)
 
