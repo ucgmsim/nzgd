@@ -15,6 +15,12 @@ dynamic = ["version", "dependencies"]
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
+[tool.deptry.per_rule_ignores]
+# vs_calc comes from the VsViewer package in the Vs30 repo, which is not on PyPI
+DEP001 = ["vs_calc"]
+# Used through pandas as the parquet and Excel engines, never imported directly
+DEP002 = ["pyarrow", "openpyxl"]
+
 [tool.ruff.lint]
 extend-select = [
   # isort imports

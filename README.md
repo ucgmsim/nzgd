@@ -99,8 +99,10 @@ pip install -e .
 ```
 
 Dependencies are listed in `requirements.txt`. Vs30 estimation also needs
-`vs_calc`, and the index build needs `qcore` for coordinate transforms; neither
-is in `requirements.txt` yet.
+`vs_calc`, which is not on PyPI. Install it from the `VsViewer` package in the
+[Vs30 repository](https://github.com/ucgmsim/Vs30) as an editable install
+(`pip install -e <path to Vs30>/VsViewer`), because a regular install leaves out
+the `vs_calc.scripts` subpackage.
 
 ## Tests
 
