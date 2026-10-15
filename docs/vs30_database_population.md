@@ -199,12 +199,13 @@ of correlation or the input assumptions; see the
 To fill rows published without it, calculate a new run against the current
 database, then run `fill-stddev`. That command:
 
-- backs up the database
-- matches every estimate to the run by report, correlation and Boore method
-- requires identical Vs30
-- sets `vs30_stddev` in one transaction
+- checks that every estimate matches exactly one run result by report,
+  correlation and Boore method, with identical Vs30 and no `vs30_stddev` yet
+- only then backs up the database
+- repeats the checks and sets `vs30_stddev` in one transaction
 
-It stops without changes on any mismatch, missing match or existing value.
+It stops without changes, and before any backup, on a mismatch, a missing or
+duplicated estimate, or an existing value.
 
 ```bash
 python -m nzgd.scripts.estimate_vs30.batch run DATABASE --run-dir RUN_DIRECTORY --kind both --workers 6

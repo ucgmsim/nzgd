@@ -375,6 +375,7 @@ def test_fill_refuses_a_differing_vs30_and_changes_nothing(
         batch.run_batch(filled_args, stage)
         with pytest.raises(ValueError, match="differ"):
             batch.fill_stddev(filled_args, stage)
+    assert not filled_args.backup.exists()
     with sqlite3.connect(filled_args.database) as target:
         assert (
             target.execute(
@@ -393,6 +394,7 @@ def test_fill_refuses_estimates_the_run_does_not_reproduce(
         batch.run_batch(filled_args, stage)
         with pytest.raises(ValueError, match="one-to-one"):
             batch.fill_stddev(filled_args, stage)
+    assert not filled_args.backup.exists()
 
 
 def test_fill_never_overwrites_an_existing_stddev(filled_args: argparse.Namespace):
@@ -405,6 +407,7 @@ def test_fill_never_overwrites_an_existing_stddev(filled_args: argparse.Namespac
         batch.run_batch(filled_args, stage)
         with pytest.raises(ValueError, match="already have"):
             batch.fill_stddev(filled_args, stage)
+    assert not filled_args.backup.exists()
 
 
 def test_fill_requires_the_database_the_run_was_calculated_from(
@@ -417,3 +420,54 @@ def test_fill_requires_the_database_the_run_was_calculated_from(
         with pytest.raises(ValueError, match="changed"):
             batch.fill_stddev(filled_args, stage)
     assert not filled_args.backup.exists()
+
+
+def test_fill_refuses_duplicate_estimates_even_when_counts_match(
+    filled_args: argparse.Namespace,
+):
+    with sqlite3.connect(filled_args.database) as target:
+        ids = [
+            row[0]
+            for row in target.execute(
+                "SELECT vs30_id FROM cptvs30estimates ORDER BY vs30_id"
+            )
+        ]
+        target.execute(
+            "INSERT INTO cptvs30estimates (cpt_id,nzgd_id,cpt_to_vs_correlation_id,"
+            "vs_to_vs30_correlation_id,vs30,vs30_stddev) SELECT cpt_id,nzgd_id,"
+            "cpt_to_vs_correlation_id,vs_to_vs30_correlation_id,vs30,vs30_stddev "
+            "FROM cptvs30estimates WHERE vs30_id=?",
+            (ids[0],),
+        )
+        target.execute("DELETE FROM cptvs30estimates WHERE vs30_id=?", (ids[-1],))
+    with batch.open_stage(filled_args.run_dir) as stage:
+        batch.run_batch(filled_args, stage)
+        with pytest.raises(ValueError, match="Duplicate"):
+            batch.fill_stddev(filled_args, stage)
+    with sqlite3.connect(filled_args.database) as target:
+        assert (
+            target.execute(
+                "SELECT count(vs30_stddev) FROM cptvs30estimates"
+            ).fetchone()[0]
+            == 0
+        )
+    assert not filled_args.backup.exists()
+
+
+def test_runs_from_before_recorded_uncertainties_are_refused(args: argparse.Namespace):
+    with batch.open_stage(args.run_dir) as stage:
+        batch.run_batch(args, stage)
+        manifest = json.loads(
+            stage.execute("SELECT value FROM metadata WHERE key='manifest'").fetchone()[
+                0
+            ]
+        )
+        stage.execute(
+            "UPDATE metadata SET value=? WHERE key='manifest'",
+            (json.dumps({**manifest, "policy_version": 2}),),
+        )
+        stage.commit()
+        for write in (batch.publish, batch.fill_stddev):
+            with pytest.raises(ValueError, match="predates"):
+                write(args, stage)
+    assert not args.backup.exists()

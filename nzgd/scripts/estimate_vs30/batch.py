@@ -621,7 +621,7 @@ def checked_run(
         is not None
     )
     if not done and source_identity(args.database) != original["source"]:
-        raise ValueError("Source changed since calculation; refusing publication")
+        raise ValueError("Source changed since calculation; refusing to write")
     if stage.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
         raise ValueError("Checkpoint database failed quick_check")
     if stage.execute("PRAGMA foreign_key_check").fetchone():
@@ -654,7 +654,7 @@ def back_up(args: argparse.Namespace, original: dict) -> None:
         if backup.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
             raise ValueError("Backup failed quick_check")
     if source_identity(args.database) != original["source"]:
-        raise ValueError("Source changed during backup; refusing publication")
+        raise ValueError("Source changed during backup; refusing to write")
 
 
 def staged_match(kind: str) -> tuple[str, str, str]:
@@ -671,6 +671,53 @@ def staged_match(kind: str) -> tuple[str, str, str]:
         ),
         f"r.kind='{kind}' AND r.status='ok'",
     )
+
+
+def attach_stage(conn: sqlite3.Connection, run_dir: Path) -> None:
+    """Attach a run's checkpoint database, read-only, as `staged`."""
+    conn.execute(
+        "ATTACH DATABASE ? AS staged",
+        ((run_dir / "estimates.sqlite").resolve().as_uri() + "?mode=ro",),
+    )
+
+
+def check_fill(conn: sqlite3.Connection) -> None:
+    """Refuse a fill unless every estimate lacks vs30_stddev and matches exactly one staged success with the same Vs30."""
+    for kind in ("cpt", "spt"):
+        joins, match, where = staged_match(kind)
+        if conn.execute(
+            f"SELECT 1 FROM {kind}vs30estimates WHERE vs30_stddev IS NOT NULL LIMIT 1"
+        ).fetchone():
+            raise ValueError(
+                f"Some {kind} estimates already have vs30_stddev; refusing to fill"
+            )
+        if conn.execute(
+            f"SELECT 1 FROM {kind}vs30estimates GROUP BY {kind}_id,"
+            f"{kind}_to_vs_correlation_id,vs_to_vs30_correlation_id HAVING count(*)>1 LIMIT 1"
+        ).fetchone():
+            raise ValueError(
+                f"Duplicate natural keys in {kind} estimates; refusing to fill"
+            )
+        matched, differing = conn.execute(
+            "SELECT count(*), sum(e.vs30 IS NOT r.vs30) "
+            + joins
+            + f"JOIN {kind}vs30estimates e ON {match} WHERE {where}"
+        ).fetchone()
+        if differing:
+            raise ValueError(
+                f"{differing} {kind} estimates differ from this run's Vs30; refusing to fill"
+            )
+        existing = conn.execute(f"SELECT count(*) FROM {kind}vs30estimates").fetchone()[
+            0
+        ]
+        staged = conn.execute("SELECT count(*) " + joins + f"WHERE {where}").fetchone()[
+            0
+        ]
+        if not matched == existing == staged:
+            raise ValueError(
+                f"{kind} estimates and this run's successes don't match one-to-one "
+                f"({existing} existing, {staged} staged, {matched} matched)"
+            )
 
 
 def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
@@ -691,10 +738,7 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
         )
     ) as target:
         target.execute("PRAGMA foreign_keys=ON")
-        target.execute(
-            "ATTACH DATABASE ? AS staged",
-            ((args.run_dir / "estimates.sqlite").resolve().as_uri() + "?mode=ro",),
-        )
+        attach_stage(target, args.run_dir)
         target.execute("BEGIN IMMEDIATE")
         try:
             if not published and source_identity(args.database) != original["source"]:
@@ -782,61 +826,37 @@ def fill_stddev(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
     original, filled_before = checked_run(args, stage, "stddev_filled")
     if filled_before:
         raise ValueError("This run has already filled vs30_stddev")
+    # Refuse before the multi-gigabyte backup; the transaction checks again.
+    with closing(read_only(args.database)) as source:
+        attach_stage(source, args.run_dir)
+        check_fill(source)
     back_up(args, original)
     with closing(
         sqlite3.connect(
             args.database.resolve().as_uri() + "?mode=rw", uri=True, timeout=60
         )
     ) as target:
-        target.execute(
-            "ATTACH DATABASE ? AS staged",
-            ((args.run_dir / "estimates.sqlite").resolve().as_uri() + "?mode=ro",),
-        )
+        attach_stage(target, args.run_dir)
         target.execute("BEGIN IMMEDIATE")
         try:
             if source_identity(args.database) != original["source"]:
                 raise ValueError("Source changed before the fill transaction")
             if read_lookups(target) != original["lookups"]:
                 raise ValueError("Lookup IDs changed")
+            check_fill(target)
             filled = {}
             for kind in ("cpt", "spt"):
                 joins, match, where = staged_match(kind)
-                if target.execute(
-                    f"SELECT 1 FROM {kind}vs30estimates WHERE vs30_stddev IS NOT NULL LIMIT 1"
-                ).fetchone():
-                    raise ValueError(
-                        f"Some {kind} estimates already have vs30_stddev; refusing to fill"
-                    )
-                matched, differing = target.execute(
-                    "SELECT count(*), sum(e.vs30 IS NOT r.vs30) "
-                    + joins
-                    + f"JOIN {kind}vs30estimates e ON {match} WHERE {where}"
-                ).fetchone()
-                if differing:
-                    raise ValueError(
-                        f"{differing} {kind} estimates differ from this run's Vs30; refusing to fill"
-                    )
-                existing = target.execute(
-                    f"SELECT count(*) FROM {kind}vs30estimates"
-                ).fetchone()[0]
-                staged = target.execute(
-                    "SELECT count(*) " + joins + f"WHERE {where}"
-                ).fetchone()[0]
-                if not matched == existing == staged:
-                    raise ValueError(
-                        f"{kind} estimates and this run's successes don't match one-to-one "
-                        f"({existing} existing, {staged} staged, {matched} matched)"
-                    )
                 target.execute(
                     f"UPDATE {kind}vs30estimates AS e SET vs30_stddev=r.vs30_stddev "
                     + joins
                     + f"WHERE {where} AND {match}"
                 )
                 filled[kind] = target.execute("SELECT changes()").fetchone()[0]
-                if filled[kind] != existing:
-                    raise ValueError(
-                        f"Filled {filled[kind]} of {existing} {kind} estimates"
-                    )
+                if target.execute(
+                    f"SELECT 1 FROM {kind}vs30estimates WHERE vs30_stddev IS NULL LIMIT 1"
+                ).fetchone():
+                    raise ValueError(f"Some {kind} estimates still lack vs30_stddev")
             target.commit()
         except BaseException:
             target.rollback()
