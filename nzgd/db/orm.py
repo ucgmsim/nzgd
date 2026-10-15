@@ -442,7 +442,7 @@ class CPTVs30Estimates(BaseModel):
     """float: The calculated Vs30 value."""
 
     vs30_stddev = FloatField(null=True)
-    """float: The calculated Vs30 standard deviation value."""
+    """float: Provisional standard deviation of ln(Vs30); see docs/vs30_database_population.md."""
 
     class Meta:
         indexes = (
@@ -494,7 +494,7 @@ class SPTVs30Estimates(BaseModel):
     """float: The calculated Vs30 value."""
 
     vs30_stddev = FloatField(null=True)
-    """float: The calculated Vs30 standard deviation value."""
+    """float: Provisional standard deviation of ln(Vs30); see docs/vs30_database_population.md."""
 
 
 def initialize_db():
