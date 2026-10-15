@@ -1,8 +1,8 @@
 """Checkpoint Vs30 estimates, then explicitly publish validated results.
 
 Uncertainty is vs_calc's provisional standard deviation of ln(Vs30); see
-dev/docs/vs_calc/vs30_uncertainty_followup.md on the Vs30 repository's
-dev_scripts_archive branch. Source measurements are always read-only during runs.
+https://github.com/ucgmsim/Vs30/blob/dev_scripts_archive/dev/docs/vs_calc/vs30_uncertainty_followup.md.
+Source measurements are always read-only during runs.
 """
 
 import argparse

@@ -14,7 +14,7 @@ There are at most 758,094 combinations for those reports before eligibility
 checks: seven CPT-to-Vs or two SPT-to-Vs relations, each with two Boore relations.
 
 Calculate separate central estimates in m/s for every supported combination.
-The initial population left `vs30_stddev` NULL (filled in October 2026; see below): see [uncertainty findings](https://github.com/ucgmsim/Vs30/blob/dev_scripts_archive/dev/docs/vs_calc/vs30_uncertainty_followup.md).
+The initial population left `vs30_stddev` NULL; it was filled in October 2026 (see the last section, and the [uncertainty findings](https://github.com/ucgmsim/Vs30/blob/dev_scripts_archive/dev/docs/vs_calc/vs30_uncertainty_followup.md)).
 No alteration to source measurements, report metadata, or lookup tables is
 authorised by the population step. Model applicability to geology is not inferred
 from a finite result; the alternatives remain labelled by correlation IDs.
@@ -46,7 +46,7 @@ from a finite result; the alternatives remain labelled by correlation IDs.
 - Require at least two usable samples and a profile reaching 5 m for Boore 2011,
   or 10 m for Boore 2004. Use the existing integer-depth treatment. At 30 m and
   deeper, both method-labelled rows hold the same directly integrated central
-  estimate, with NULL uncertainty.
+  estimate and the same uncertainty, 0.2 (NULL in the initial population).
 - Reject non-finite or non-positive predictions. Record the precise failure or
   ineligibility reason; do not insert failed predictions as successful estimates.
 - Reject corrected cone resistances that are non-positive within floating-point
@@ -118,7 +118,9 @@ legacy extraction-default database path by accident.
 After publication the source file identity has changed, so `run` intentionally
 will not resume calculation into that old run directory. `status` and repeat
 `publish` remain available; repeat publication inserts zero rows if estimates
-are unchanged. Use a new run directory for subsequent model revisions. If a
+are unchanged. Run directories from before October 2026 (policy version 2) hold
+no uncertainties, so `publish` and `fill-stddev` refuse them; recalculate in a
+new run directory. Use a new run directory for subsequent model revisions. If a
 publication is interrupted before its completion is recorded, preserve the
 backup and inspect the target before retrying; never force past identity checks.
 
@@ -127,8 +129,8 @@ backup and inspect the target before retrying; never force past identity checks.
 - Tests of depth gates, numerical filtering, metadata defaults, input isolation,
   nearest-layer policy, checkpoint/resume, and non-overwriting publication.
 - Pilot comparisons with direct VsViewer calculations and order-invariance checks.
-- Counts by method; finite positive means; NULL uncertainty everywhere; no duplicate
-  natural keys; target foreign keys and backup integrity verified.
+- Counts by method; finite positive means; NULL uncertainty everywhere (initial
+  population only); no duplicate natural keys; target foreign keys and backup integrity verified.
 - Summarise skipped reports/combinations, assumption flags and extremes. These
   are provisional correlation-based estimates, not source-data certification.
 - Record actual runtime and production output counts in a separate results report.
