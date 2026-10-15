@@ -1,7 +1,8 @@
-"""Checkpoint central Vs30 estimates, then explicitly publish validated results.
+"""Checkpoint Vs30 estimates, then explicitly publish validated results.
 
-Uncertainty is deliberately NULL; see VsViewer/docs/vs30_uncertainty_followup.md
-in the Vs30 repository. Source measurements are always read-only during runs.
+Uncertainty is vs_calc's provisional standard deviation of ln(Vs30); see
+dev/docs/vs_calc/vs30_uncertainty_followup.md on the Vs30 repository's
+dev_scripts_archive branch. Source measurements are always read-only during runs.
 """
 
 import argparse
@@ -245,8 +246,8 @@ def prepare_spt(report: dict) -> tuple[vs_calc.SPT, dict]:
     return spt, assumptions
 
 
-def central_estimates(name: str, vs: np.ndarray, depth: np.ndarray) -> list[tuple]:
-    """Evaluate each eligible existing central relation; never return its sigma."""
+def vs30_estimates(name: str, vs: np.ndarray, depth: np.ndarray) -> list[tuple]:
+    """Evaluate each eligible Vs-to-Vs30 relation, with vs_calc's provisional sigma."""
     vs, depth = np.asarray(vs).reshape(-1), np.asarray(depth).reshape(-1)
     if (
         len(vs) < 2
@@ -268,17 +269,25 @@ def central_estimates(name: str, vs: np.ndarray, depth: np.ndarray) -> list[tupl
                     "ineligible",
                     f"usable depth {depth.max():g} m below {minimum} m",
                     None,
+                    None,
                 )
             )
             continue
         if not (depth <= min(int(depth.max()), 30)).any():
             rows.append(
-                (method, "ineligible", "no measurement within integration depth", None)
+                (
+                    method,
+                    "ineligible",
+                    "no measurement within integration depth",
+                    None,
+                    None,
+                )
             )
             continue
         try:
-            # VsProfile and several input correlations mutate arrays. Each conversion
-            # gets fresh copies; uncertainty placeholders do not affect its mean.
+            # VsProfile and several input correlations mutate arrays, so each
+            # conversion gets fresh copies. The provisional sigma doesn't use the
+            # per-depth uncertainty, so zeros stand in for it.
             profile = vs_calc.VsProfile(
                 name,
                 vs.copy(),
@@ -295,10 +304,11 @@ def central_estimates(name: str, vs: np.ndarray, depth: np.ndarray) -> list[tupl
                     "ok",
                     "direct 30 m integration" if profile.max_depth == 30 else "",
                     value,
+                    float(profile.vs30_sd),
                 )
             )
         except (ValueError, IndexError, KeyError, ArithmeticError) as exc:
-            rows.append((method, "error", f"{type(exc).__name__}: {exc}", None))
+            rows.append((method, "error", f"{type(exc).__name__}: {exc}", None, None))
     return rows
 
 
@@ -343,17 +353,24 @@ def process_report(task: tuple[str, int]) -> tuple:
                         vs, _, depth, _ = correlation(spt)
                     outcomes.extend(
                         (name, *row)
-                        for row in central_estimates(str(report_id), vs, depth)
+                        for row in vs30_estimates(str(report_id), vs, depth)
                     )
                 except (ValueError, IndexError, KeyError, ArithmeticError) as exc:
                     outcomes.extend(
-                        (name, method, "error", f"{type(exc).__name__}: {exc}", None)
+                        (
+                            name,
+                            method,
+                            "error",
+                            f"{type(exc).__name__}: {exc}",
+                            None,
+                            None,
+                        )
                         for method in MINIMUM_DEPTH
                     )
         except (ValueError, IndexError, KeyError, ArithmeticError) as exc:
             assumptions["input_error"] = f"{type(exc).__name__}: {exc}"
             outcomes = [
-                (name, method, "ineligible", assumptions["input_error"], None)
+                (name, method, "ineligible", assumptions["input_error"], None, None)
                 for name in correlations
                 for method in MINIMUM_DEPTH
             ]
@@ -397,8 +414,10 @@ def manifest(database: Path, weights: Path) -> dict:
         "python": sys.version,
         "numpy": np.__version__,
         "pandas": pd.__version__,
-        "uncertainty_policy": "NULL: not reliably evaluated",
-        "policy_version": 2,
+        "uncertainty_policy": (
+            "provisional: sqrt(0.2**2 + (ln(10) * Boore residual)**2) from vs_calc"
+        ),
+        "policy_version": 3,
     }
 
 
@@ -415,11 +434,12 @@ def open_stage(run_dir: Path) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS results (
             kind TEXT NOT NULL, report_id INTEGER NOT NULL, vs_method TEXT NOT NULL,
             vs30_method TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL,
-            vs30 REAL,
+            vs30 REAL, vs30_stddev REAL,
             PRIMARY KEY (kind, report_id, vs_method, vs30_method),
             FOREIGN KEY (kind, report_id) REFERENCES records(kind, report_id),
-            CHECK ((status='ok' AND vs30>0 AND vs30 IS NOT NULL) OR
-                   (status!='ok' AND vs30 IS NULL)));
+            CHECK ((status='ok' AND vs30>0 AND vs30 IS NOT NULL
+                    AND vs30_stddev>0 AND vs30_stddev IS NOT NULL) OR
+                   (status!='ok' AND vs30 IS NULL AND vs30_stddev IS NULL)));
         CREATE TABLE IF NOT EXISTS invocations (
             started_utc TEXT NOT NULL, workers INTEGER NOT NULL,
             processed INTEGER NOT NULL, elapsed_seconds REAL NOT NULL);
@@ -543,7 +563,7 @@ def run_batch(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
                 ),
             )
             stage.executemany(
-                "INSERT INTO results VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO results VALUES (?,?,?,?,?,?,?,?)",
                 ((kind, report_id, *row) for row in outcomes),
             )
             processed += 1
@@ -577,8 +597,10 @@ def run_batch(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
     print(json.dumps(report_status(stage), indent=2), flush=True)
 
 
-def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
-    """Back up and transactionally insert only absent, validated estimate rows."""
+def checked_run(
+    args: argparse.Namespace, stage: sqlite3.Connection, done_key: str
+) -> tuple[dict, bool]:
+    """Validate a calculated run before writing it; return its manifest and whether that write was done."""
     invalidated = stage.execute(
         "SELECT value FROM metadata WHERE key='invalidated'"
     ).fetchone()
@@ -588,12 +610,17 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
     if not stored:
         raise ValueError("No calculated run to publish")
     original = json.loads(stored[0])
+    if original.get("policy_version") != 3:
+        raise ValueError(
+            "Run predates recorded uncertainties; recalculate in a new run directory"
+        )
     if str(args.database.resolve()) != original["source"]["path"]:
         raise ValueError("Target database differs from the run source")
-    published = stage.execute(
-        "SELECT value FROM metadata WHERE key='published'"
-    ).fetchone()
-    if not published and source_identity(args.database) != original["source"]:
+    done = (
+        stage.execute("SELECT 1 FROM metadata WHERE key=?", (done_key,)).fetchone()
+        is not None
+    )
+    if not done and source_identity(args.database) != original["source"]:
         raise ValueError("Source changed since calculation; refusing publication")
     if stage.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
         raise ValueError("Checkpoint database failed quick_check")
@@ -601,9 +628,54 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
         raise ValueError("Checkpoint database has broken references")
     if stage.execute(
         "SELECT 1 FROM results WHERE status='ok' AND "
-        "(vs30 IS NULL OR vs30<=0 OR vs30>1.7976931348623157e308) LIMIT 1"
+        "(vs30 IS NULL OR vs30<=0 OR vs30>1.7976931348623157e308 OR "
+        "vs30_stddev IS NULL OR vs30_stddev<=0 OR vs30_stddev>1.7976931348623157e308) LIMIT 1"
     ).fetchone():
-        raise ValueError("Invalid staged central estimate")
+        raise ValueError("Invalid staged estimate")
+    return original, done
+
+
+def back_up(args: argparse.Namespace, original: dict) -> None:
+    """Copy the target into a new, checked backup file; never overwrite one."""
+    if args.backup.resolve() in (
+        args.database.resolve(),
+        (args.run_dir / "estimates.sqlite").resolve(),
+    ):
+        raise ValueError("Backup must be a distinct new file")
+    # Reserve the path exclusively: never overwrite an existing backup.
+    descriptor = os.open(args.backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(descriptor)
+    print(f"Creating SQLite backup: {args.backup}", flush=True)
+    with (
+        closing(read_only(args.database)) as source,
+        closing(sqlite3.connect(args.backup)) as backup,
+    ):
+        source.backup(backup, pages=8192)
+        if backup.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+            raise ValueError("Backup failed quick_check")
+    if source_identity(args.database) != original["source"]:
+        raise ValueError("Source changed during backup; refusing publication")
+
+
+def staged_match(kind: str) -> tuple[str, str, str]:
+    """SQL joining staged results to lookup IDs, matching them to estimates, and selecting successes."""
+    return (
+        (
+            "FROM staged.results r JOIN staged.records p USING (kind,report_id) "
+            f"JOIN {kind}tovscorrelation v ON v.value=r.vs_method "
+            "JOIN vstovs30correlation b ON b.value=r.vs30_method "
+        ),
+        (
+            f"e.{kind}_id=r.report_id AND e.{kind}_to_vs_correlation_id=v.id "
+            "AND e.vs_to_vs30_correlation_id=b.id"
+        ),
+        f"r.kind='{kind}' AND r.status='ok'",
+    )
+
+
+def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
+    """Back up and transactionally insert only absent, validated estimate rows."""
+    original, published = checked_run(args, stage, "published")
     expected = dict(
         stage.execute(
             "SELECT kind,count(*) FROM results WHERE status='ok' GROUP BY kind"
@@ -612,24 +684,7 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
     if not sum(expected.values()):
         raise ValueError("No successful estimates to publish")
     if not published:
-        if args.backup.resolve() in (
-            args.database.resolve(),
-            (args.run_dir / "estimates.sqlite").resolve(),
-        ):
-            raise ValueError("Backup must be a distinct new file")
-        # Reserve the path exclusively: never overwrite an existing backup.
-        descriptor = os.open(args.backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        os.close(descriptor)
-        print(f"Creating SQLite backup: {args.backup}", flush=True)
-        with (
-            closing(read_only(args.database)) as source,
-            closing(sqlite3.connect(args.backup)) as backup,
-        ):
-            source.backup(backup, pages=8192)
-            if backup.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
-                raise ValueError("Backup failed quick_check")
-        if source_identity(args.database) != original["source"]:
-            raise ValueError("Source changed during backup; refusing publication")
+        back_up(args, original)
     with closing(
         sqlite3.connect(
             args.database.resolve().as_uri() + "?mode=rw", uri=True, timeout=60
@@ -648,16 +703,7 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
                 raise ValueError("Lookup IDs changed")
             inserted = {}
             for kind in ("cpt", "spt"):
-                joins = (
-                    "FROM staged.results r JOIN staged.records p USING (kind,report_id) "
-                    f"JOIN {kind}tovscorrelation v ON v.value=r.vs_method "
-                    "JOIN vstovs30correlation b ON b.value=r.vs30_method "
-                )
-                match = (
-                    f"e.{kind}_id=r.report_id AND e.{kind}_to_vs_correlation_id=v.id "
-                    "AND e.vs_to_vs30_correlation_id=b.id"
-                )
-                where = f"r.kind='{kind}' AND r.status='ok'"
+                joins, match, where = staged_match(kind)
                 extra_conflict = (
                     "e.nzgd_id IS NOT p.nzgd_id"
                     if kind == "cpt"
@@ -672,7 +718,7 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
                     "SELECT r.report_id "
                     + joins
                     + f"JOIN {kind}vs30estimates e ON {match} "
-                    f"WHERE {where} AND (e.vs30 IS NOT r.vs30 OR e.vs30_stddev IS NOT NULL OR {extra_conflict}) LIMIT 1"
+                    f"WHERE {where} AND (e.vs30 IS NOT r.vs30 OR e.vs30_stddev IS NOT r.vs30_stddev OR {extra_conflict}) LIMIT 1"
                 ).fetchone()
                 if conflict:
                     raise ValueError(
@@ -684,7 +730,7 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
                     raise ValueError(f"Unmapped staged {kind} correlation")
                 if kind == "cpt":
                     columns = "cpt_id,nzgd_id,cpt_to_vs_correlation_id,vs_to_vs30_correlation_id,vs30,vs30_stddev"
-                    values = "r.report_id,p.nzgd_id,v.id,b.id,r.vs30,NULL "
+                    values = "r.report_id,p.nzgd_id,v.id,b.id,r.vs30,r.vs30_stddev "
                 else:
                     columns = (
                         "spt_id,spt_to_vs_correlation_id,vs_to_vs30_correlation_id,assumed_borehole_diameter_mm,"
@@ -695,7 +741,7 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
                         "r.report_id,v.id,b.id,json_extract(p.assumptions,'$.borehole_diameter_mm'),"
                         f"{original['lookups']['spttovs30hammertype']['Auto']},"
                         "1-json_extract(p.assumptions,'$.energy_ratio_assumed'),"
-                        "json_extract(p.assumptions,'$.used_layer_soil_types'),r.vs30,NULL "
+                        "json_extract(p.assumptions,'$.used_layer_soil_types'),r.vs30,r.vs30_stddev "
                     )
                 target.execute(
                     f"INSERT INTO {kind}vs30estimates ({columns}) SELECT "
@@ -731,6 +777,83 @@ def publish(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
     print(json.dumps(publication, indent=2), flush=True)
 
 
+def fill_stddev(args: argparse.Namespace, stage: sqlite3.Connection) -> None:
+    """Back up, then set vs30_stddev on existing estimates whose Vs30 this run reproduces."""
+    original, filled_before = checked_run(args, stage, "stddev_filled")
+    if filled_before:
+        raise ValueError("This run has already filled vs30_stddev")
+    back_up(args, original)
+    with closing(
+        sqlite3.connect(
+            args.database.resolve().as_uri() + "?mode=rw", uri=True, timeout=60
+        )
+    ) as target:
+        target.execute(
+            "ATTACH DATABASE ? AS staged",
+            ((args.run_dir / "estimates.sqlite").resolve().as_uri() + "?mode=ro",),
+        )
+        target.execute("BEGIN IMMEDIATE")
+        try:
+            if source_identity(args.database) != original["source"]:
+                raise ValueError("Source changed before the fill transaction")
+            if read_lookups(target) != original["lookups"]:
+                raise ValueError("Lookup IDs changed")
+            filled = {}
+            for kind in ("cpt", "spt"):
+                joins, match, where = staged_match(kind)
+                if target.execute(
+                    f"SELECT 1 FROM {kind}vs30estimates WHERE vs30_stddev IS NOT NULL LIMIT 1"
+                ).fetchone():
+                    raise ValueError(
+                        f"Some {kind} estimates already have vs30_stddev; refusing to fill"
+                    )
+                matched, differing = target.execute(
+                    "SELECT count(*), sum(e.vs30 IS NOT r.vs30) "
+                    + joins
+                    + f"JOIN {kind}vs30estimates e ON {match} WHERE {where}"
+                ).fetchone()
+                if differing:
+                    raise ValueError(
+                        f"{differing} {kind} estimates differ from this run's Vs30; refusing to fill"
+                    )
+                existing = target.execute(
+                    f"SELECT count(*) FROM {kind}vs30estimates"
+                ).fetchone()[0]
+                staged = target.execute(
+                    "SELECT count(*) " + joins + f"WHERE {where}"
+                ).fetchone()[0]
+                if not matched == existing == staged:
+                    raise ValueError(
+                        f"{kind} estimates and this run's successes don't match one-to-one "
+                        f"({existing} existing, {staged} staged, {matched} matched)"
+                    )
+                target.execute(
+                    f"UPDATE {kind}vs30estimates AS e SET vs30_stddev=r.vs30_stddev "
+                    + joins
+                    + f"WHERE {where} AND {match}"
+                )
+                filled[kind] = target.execute("SELECT changes()").fetchone()[0]
+                if filled[kind] != existing:
+                    raise ValueError(
+                        f"Filled {filled[kind]} of {existing} {kind} estimates"
+                    )
+            target.commit()
+        except BaseException:
+            target.rollback()
+            raise
+    record = {
+        "time_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "filled": filled,
+        "backup": str(args.backup.resolve()),
+    }
+    stage.execute(
+        "INSERT OR REPLACE INTO metadata VALUES ('stddev_filled',?)",
+        (json.dumps(record),),
+    )
+    stage.commit()
+    print(json.dumps(record, indent=2), flush=True)
+
+
 def main(default_kind: str = "both") -> None:
     """Run, inspect or explicitly publish a checkpointed batch."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -763,6 +886,13 @@ def main(default_kind: str = "both") -> None:
     write.add_argument("database", type=Path)
     write.add_argument("--run-dir", type=Path, required=True)
     write.add_argument("--backup", type=Path, required=True)
+    fill = commands.add_parser(
+        "fill-stddev",
+        help="backup, then set vs30_stddev on existing estimates this run reproduces",
+    )
+    fill.add_argument("database", type=Path)
+    fill.add_argument("--run-dir", type=Path, required=True)
+    fill.add_argument("--backup", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "status":
         with closing(read_only(args.run_dir / "estimates.sqlite")) as stage:
@@ -770,16 +900,21 @@ def main(default_kind: str = "both") -> None:
         return
     if args.command == "run" and (args.workers < 1 or args.limit < 0):
         parser.error("workers must be positive and limit non-negative")
-    if args.command == "publish" and not (args.run_dir / "estimates.sqlite").is_file():
-        parser.error("publish requires an existing checkpoint database")
+    if (
+        args.command in ("publish", "fill-stddev")
+        and not (args.run_dir / "estimates.sqlite").is_file()
+    ):
+        parser.error(f"{args.command} requires an existing checkpoint database")
     args.run_dir.mkdir(parents=True, exist_ok=True)
     with (args.run_dir / "run.lock").open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with closing(open_stage(args.run_dir)) as stage:
             if args.command == "run":
                 run_batch(args, stage)
-            else:
+            elif args.command == "publish":
                 publish(args, stage)
+            else:
+                fill_stddev(args, stage)
 
 
 if __name__ == "__main__":

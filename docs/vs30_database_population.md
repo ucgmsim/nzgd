@@ -14,7 +14,7 @@ There are at most 758,094 combinations for those reports before eligibility
 checks: seven CPT-to-Vs or two SPT-to-Vs relations, each with two Boore relations.
 
 Calculate separate central estimates in m/s for every supported combination.
-Leave `vs30_stddev` NULL: see [uncertainty findings](https://github.com/ucgmsim/Vs30/blob/dev_scripts_archive/dev/docs/vs_calc/vs30_uncertainty_followup.md).
+The initial population left `vs30_stddev` NULL (filled in October 2026; see below): see [uncertainty findings](https://github.com/ucgmsim/Vs30/blob/dev_scripts_archive/dev/docs/vs_calc/vs30_uncertainty_followup.md).
 No alteration to source measurements, report metadata, or lookup tables is
 authorised by the population step. Model applicability to geology is not inferred
 from a finite result; the alternatives remain labelled by correlation IDs.
@@ -90,7 +90,7 @@ Use `/home/arr65/venvs/dev_nzgd_venv/bin/python` with:
 
 ```bash
 source /home/arr65/venvs/dev_nzgd_venv/bin/activate
-export PYTHONPATH=/home/arr65/src/Vs30/.worktrees/andrew-latest/VsViewer:/home/arr65/src/nzgd
+export PYTHONPATH=/home/arr65/src/Vs30/VsViewer:/home/arr65/src/nzgd
 export PYTHONDONTWRITEBYTECODE=1
 export OPENBLAS_NUM_THREADS=1
 export OMP_NUM_THREADS=1
@@ -182,3 +182,29 @@ AND json_extract(assumptions, '$.groups.qc_fs.minimum_depth_m') > 2;
 Keep extrapolation depth, unlogged near-surface thickness and soil-log ambiguity
 separate from statistical uncertainty. A finite positive estimate is not evidence
 that the investigation or geological correlation choice is reliable.
+
+## Filling `vs30_stddev` (October 2026)
+
+The initial population left `vs30_stddev` NULL. The batch now records vs_calc's
+provisional uncertainty with every estimate and publishes it with new rows.
+`vs30_stddev` is the standard deviation of ln(Vs30):
+`sqrt(0.2**2 + (ln(10) * Boore residual)**2)`. The Boore residual is the published
+one for the profile's integer depth, and the term is 0 at 30 m, so the value is
+0.20 for profiles reaching 30 m and up to 0.34 at 5 m. It doesn't cover the choice
+of correlation or the input assumptions; see the
+[uncertainty note](https://github.com/ucgmsim/Vs30/blob/dev_scripts_archive/dev/docs/vs_calc/vs30_uncertainty_followup.md).
+
+To fill rows published without it, calculate a new run against the current
+database, then run `fill-stddev`. That command:
+
+- backs up the database
+- matches every estimate to the run by report, correlation and Boore method
+- requires identical Vs30
+- sets `vs30_stddev` in one transaction
+
+It stops without changes on any mismatch, missing match or existing value.
+
+```bash
+python -m nzgd.scripts.estimate_vs30.batch run DATABASE --run-dir RUN_DIRECTORY --kind both --workers 6
+python -m nzgd.scripts.estimate_vs30.batch fill-stddev DATABASE --run-dir RUN_DIRECTORY --backup BACKUP_DATABASE
+```

@@ -105,19 +105,19 @@ def test_depth_eligibility_and_no_input_mutation(depth: float, methods: int):
     depths = np.linspace(0.5, depth, 30)
     velocities = np.linspace(150, 250, 30)
     original = depths.copy(), velocities.copy()
-    rows = batch.central_estimates("test", velocities, depths)
+    rows = batch.vs30_estimates("test", velocities, depths)
     assert sum(row[1] == "ok" for row in rows) == methods
     np.testing.assert_array_equal(depths, original[0])
     np.testing.assert_array_equal(velocities, original[1])
+    assert all(0.2 <= row[4] < 0.35 for row in rows if row[1] == "ok")
     if depth >= 30:
         assert rows[0][3] == rows[1][3]
+        assert rows[0][4] == rows[1][4] == pytest.approx(0.2)
 
 
 def test_invalid_velocity_is_not_silently_dropped():
     with pytest.raises(ValueError, match="finite positive"):
-        batch.central_estimates(
-            "bad", np.array([100, np.nan, 200]), np.array([1, 5, 12])
-        )
+        batch.vs30_estimates("bad", np.array([100, np.nan, 200]), np.array([1, 5, 12]))
 
 
 @pytest.mark.parametrize("qc,u2", [(0.04, -0.2), (0.02, -0.1), (0.5, -2.5)])
@@ -208,13 +208,13 @@ def test_resume_backup_publication_and_idempotence(args: argparse.Namespace):
                 target.execute(
                     "SELECT count(vs30_stddev) FROM cptvs30estimates"
                 ).fetchone()[0]
-                == 0
+                == 18
             )
             assert (
                 target.execute(
                     "SELECT count(vs30_stddev) FROM sptvs30estimates"
                 ).fetchone()[0]
-                == 0
+                == 8
             )
             assert (
                 backup.execute("SELECT count(*) FROM cptvs30estimates").fetchone()[0]
@@ -308,3 +308,112 @@ def test_existing_backup_is_never_overwritten(args: argparse.Namespace):
         assert (
             target.execute("SELECT count(*) FROM cptvs30estimates").fetchone()[0] == 0
         )
+
+
+@pytest.fixture
+def filled_args(args: argparse.Namespace, tmp_path: Path):
+    """Estimates published without vs30_stddev, as on 2026-09-19, and a new run directory to fill them from."""
+    with batch.open_stage(args.run_dir) as stage:
+        batch.run_batch(args, stage)
+        batch.publish(args, stage)
+    with sqlite3.connect(args.database) as target:
+        target.execute("UPDATE cptvs30estimates SET vs30_stddev=NULL")
+        target.execute("UPDATE sptvs30estimates SET vs30_stddev=NULL")
+    fill_run = tmp_path / "fill_run"
+    fill_run.mkdir()
+    return argparse.Namespace(
+        **{**vars(args), "run_dir": fill_run, "backup": tmp_path / "fill_backup.db"}
+    )
+
+
+def test_fill_sets_every_missing_stddev_and_keeps_vs30(filled_args: argparse.Namespace):
+    with sqlite3.connect(filled_args.database) as target:
+        before = target.execute(
+            "SELECT vs30_id,vs30 FROM cptvs30estimates ORDER BY vs30_id"
+        ).fetchall()
+    with batch.open_stage(filled_args.run_dir) as stage:
+        batch.run_batch(filled_args, stage)
+        batch.fill_stddev(filled_args, stage)
+        with pytest.raises(ValueError, match="already filled"):
+            batch.fill_stddev(filled_args, stage)
+    with (
+        sqlite3.connect(filled_args.database) as target,
+        sqlite3.connect(filled_args.backup) as backup,
+    ):
+        assert (
+            target.execute(
+                "SELECT vs30_id,vs30 FROM cptvs30estimates ORDER BY vs30_id"
+            ).fetchall()
+            == before
+        )
+        for table in ("cptvs30estimates", "sptvs30estimates"):
+            assert target.execute(
+                f"SELECT count(*), min(vs30_stddev)>=0.2, max(vs30_stddev)<0.35 "
+                f"FROM {table} WHERE vs30_stddev IS NOT NULL"
+            ).fetchone()[1:] == (1, 1)
+            assert (
+                target.execute(
+                    f"SELECT count(*) FROM {table} WHERE vs30_stddev IS NULL"
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                backup.execute(f"SELECT count(vs30_stddev) FROM {table}").fetchone()[0]
+                == 0
+            )
+
+
+def test_fill_refuses_a_differing_vs30_and_changes_nothing(
+    filled_args: argparse.Namespace,
+):
+    with sqlite3.connect(filled_args.database) as target:
+        target.execute(
+            "UPDATE sptvs30estimates SET vs30=vs30+1 "
+            "WHERE vs30_id=(SELECT min(vs30_id) FROM sptvs30estimates)"
+        )
+    with batch.open_stage(filled_args.run_dir) as stage:
+        batch.run_batch(filled_args, stage)
+        with pytest.raises(ValueError, match="differ"):
+            batch.fill_stddev(filled_args, stage)
+    with sqlite3.connect(filled_args.database) as target:
+        assert (
+            target.execute(
+                "SELECT count(vs30_stddev) FROM cptvs30estimates"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_fill_refuses_estimates_the_run_does_not_reproduce(
+    filled_args: argparse.Namespace,
+):
+    with sqlite3.connect(filled_args.database) as target:
+        target.execute("INSERT INTO cptvs30estimates VALUES (999,2,200,1,1,300,NULL)")
+    with batch.open_stage(filled_args.run_dir) as stage:
+        batch.run_batch(filled_args, stage)
+        with pytest.raises(ValueError, match="one-to-one"):
+            batch.fill_stddev(filled_args, stage)
+
+
+def test_fill_never_overwrites_an_existing_stddev(filled_args: argparse.Namespace):
+    with sqlite3.connect(filled_args.database) as target:
+        target.execute(
+            "UPDATE cptvs30estimates SET vs30_stddev=0.5 "
+            "WHERE vs30_id=(SELECT min(vs30_id) FROM cptvs30estimates)"
+        )
+    with batch.open_stage(filled_args.run_dir) as stage:
+        batch.run_batch(filled_args, stage)
+        with pytest.raises(ValueError, match="already have"):
+            batch.fill_stddev(filled_args, stage)
+
+
+def test_fill_requires_the_database_the_run_was_calculated_from(
+    filled_args: argparse.Namespace,
+):
+    with batch.open_stage(filled_args.run_dir) as stage:
+        batch.run_batch(filled_args, stage)
+        with sqlite3.connect(filled_args.database) as target:
+            target.execute("UPDATE cptmeasurements SET qc_MPa=6 WHERE measurement_id=1")
+        with pytest.raises(ValueError, match="changed"):
+            batch.fill_stddev(filled_args, stage)
+    assert not filled_args.backup.exists()
