@@ -208,3 +208,7 @@ It stops without changes on any mismatch, missing match or existing value.
 python -m nzgd.scripts.estimate_vs30.batch run DATABASE --run-dir RUN_DIRECTORY --kind both --workers 6
 python -m nzgd.scripts.estimate_vs30.batch fill-stddev DATABASE --run-dir RUN_DIRECTORY --backup BACKUP_DATABASE
 ```
+
+Filled on 2026-10-15: 514,444 CPT and 24,350 SPT rows, from run directory
+`.../dev_extracted_cpt_and_scpt_data/vs30_estimates_20261015_stddev` (backup
+`source_before_stddev.db` in that directory).
